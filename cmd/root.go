@@ -9,8 +9,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "mak",
-	Short: "MagicAtworK CLI — personal productivity tool",
+	Use:     "mak",
+	Version: "0.0.1",
+	Short:   "MagicAtworK CLI tool",
 	Long: `mak is a personal CLI tool for scaffolding frontend validation,
 setting up dev environments, automating meetings while speeding up the development process.`,
 }
