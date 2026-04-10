@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="lukaculjak/mak"
+REPO="lukaculjak/mak-cli"
 BINARY="mak"
 INSTALL_DIR="/usr/local/bin"
 
