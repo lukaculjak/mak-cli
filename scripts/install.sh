@@ -5,7 +5,6 @@ REPO="lukaculjak/mak-cli"
 BINARY="mak"
 INSTALL_DIR="/usr/local/bin"
 
-# --- detect OS and arch ---
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
@@ -20,7 +19,6 @@ case "$OS" in
   *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
 esac
 
-# --- fetch latest release tag ---
 VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
   | grep '"tag_name":' \
   | sed -E 's/.*"([^"]+)".*/\1/')

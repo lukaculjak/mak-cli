@@ -22,8 +22,6 @@ builds:
 archives:
   - format: tar.gz
     name_template: "mak_{{ .Os }}_{{ .Arch }}"
-    files:
-      - README.md
 
 checksum:
   name_template: "checksums.txt"
