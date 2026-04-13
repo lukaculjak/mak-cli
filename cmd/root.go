@@ -38,4 +38,5 @@ func init() {
 	rootCmd.Version = Version
 	rootCmd.AddCommand(setup.NewSetupCmd())
 	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newUninstallCmd())
 }
