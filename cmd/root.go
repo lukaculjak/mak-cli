@@ -10,8 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time by GoReleaser via ldflags.
-// Falls back to "dev" for local builds.
 var Version = "dev"
 
 var rootCmd = &cobra.Command{

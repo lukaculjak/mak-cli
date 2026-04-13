@@ -13,7 +13,6 @@ const (
 	Nuxt4  ProjectType = "nuxt4"
 )
 
-// Detect inspects dir and returns the frontend framework found there.
 func Detect(dir string) (ProjectType, error) {
 	quasarMarkers := []string{"quasar.config.js", "quasar.config.ts", "quasar.conf.js"}
 	for _, f := range quasarMarkers {
@@ -29,7 +28,7 @@ func Detect(dir string) (ProjectType, error) {
 		}
 	}
 
-	return "", fmt.Errorf("not a Quasar or Nuxt project — run mak from the project root")
+	return "", fmt.Errorf("not a Quasar or Nuxt project, run mak from the project root")
 }
 
 func fileExists(path string) bool {

@@ -39,7 +39,6 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 curl -fsSL "$URL" -o "$TMP_DIR/$FILENAME"
 tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
 
-# install (use sudo if needed)
 if [ -w "$INSTALL_DIR" ]; then
   mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
 else

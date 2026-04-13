@@ -6,7 +6,6 @@ import (
 	"github.com/lukaculjak/mak/internal/detect"
 )
 
-// Generator writes validation boilerplate into a project directory.
 type Generator interface {
 	Generate(dir string) error
 }

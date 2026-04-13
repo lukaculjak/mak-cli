@@ -1,6 +1,5 @@
 package validation
 
-// useValidationRules is framework-agnostic — identical for Quasar and Nuxt.
 const useValidationRules = `// A validation rule is a function that receives a field value
 // and returns either ` + "`true`" + ` (valid) or an error string.
 export type ValidationRule = (value: string) => true | string
@@ -18,14 +17,13 @@ export const password: ValidationRule = (value) =>
   /^(?=.*[A-Z])(?=.*\d).{8,}$/.test(value) ||
   'Password must be at least 8 characters, include an uppercase letter and a number'
 
-// Factory — receives a getter so it can read another field's value at validation time
+// Factory receives a getter so it can read another field's value at validation time
 export const confirmPassword =
   (getPassword: () => string): ValidationRule =>
   (value) =>
     value === getPassword() || 'Passwords do not match'
 `
 
-// useForm is framework-agnostic — identical for Quasar and Nuxt.
 const useForm = `import { reactive, computed } from 'vue'
 import type { ValidationRule } from './useValidationRules'
 

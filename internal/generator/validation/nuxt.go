@@ -8,7 +8,6 @@ import (
 
 type nuxt4Generator struct{}
 
-// Nuxt 4 uses the app/ directory by default.
 func (g *nuxt4Generator) Generate(dir string) error {
 	composablesDir := filepath.Join(dir, "app", "composables")
 
@@ -30,6 +29,6 @@ func (g *nuxt4Generator) Generate(dir string) error {
 	}
 
 	fmt.Println("\nNuxt 4 validation setup complete.")
-	fmt.Println("Composables are auto-imported — use useForm() and useValidationRules directly.")
+	fmt.Println("Composables are auto-imported, use useForm() and useValidationRules directly.")
 	return nil
 }
