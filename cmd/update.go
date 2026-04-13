@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/lukaculjak/mak/internal/updater"
+	"github.com/lukaculjak/mak-cli/internal/updater"
 	"github.com/spf13/cobra"
 )
 

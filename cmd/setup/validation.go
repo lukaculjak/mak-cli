@@ -3,8 +3,8 @@ package setup
 import (
 	"fmt"
 
-	"github.com/lukaculjak/mak/internal/detect"
-	"github.com/lukaculjak/mak/internal/generator/validation"
+	"github.com/lukaculjak/mak-cli/internal/detect"
+	"github.com/lukaculjak/mak-cli/internal/generator/validation"
 	"github.com/spf13/cobra"
 )
 

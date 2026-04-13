@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lukaculjak/mak/cmd/setup"
-	"github.com/lukaculjak/mak/internal/updater"
+	"github.com/lukaculjak/mak-cli/cmd/setup"
+	"github.com/lukaculjak/mak-cli/internal/updater"
 	"github.com/spf13/cobra"
 )
 

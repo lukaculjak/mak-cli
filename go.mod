@@ -1,4 +1,4 @@
-module github.com/lukaculjak/mak
+module github.com/lukaculjak/mak-cli
 
 go 1.25.5
 

@@ -3,7 +3,7 @@ package validation
 import (
 	"fmt"
 
-	"github.com/lukaculjak/mak/internal/detect"
+	"github.com/lukaculjak/mak-cli/internal/detect"
 )
 
 type Generator interface {
