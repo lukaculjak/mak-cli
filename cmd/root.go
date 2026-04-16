@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/cmd/meet"
+	"github.com/lukaculjak/mak-cli/cmd/prefill"
 	"github.com/lukaculjak/mak-cli/cmd/setup"
 	"github.com/lukaculjak/mak-cli/internal/updater"
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ func init() {
 	rootCmd.Version = Version
 	rootCmd.AddCommand(setup.NewSetupCmd())
 	rootCmd.AddCommand(meet.NewMeetCmd())
+	rootCmd.AddCommand(prefill.NewPrefillCmd())
 	rootCmd.AddCommand(newUpdateCmd())
 	rootCmd.AddCommand(newUninstallCmd())
 }
