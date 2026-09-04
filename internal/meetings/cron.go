@@ -1,6 +1,7 @@
 package meetings
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -10,8 +11,14 @@ import (
 
 const cronMarker = "# mak:meet:"
 
-func cronStartTag(alias string) string { return cronMarker + alias }
-func cronEndTag(alias string) string   { return cronMarker + alias + ":end" }
+func cronStartTag(alias string) string {
+	return cronMarker + "v1:" + base64.RawURLEncoding.EncodeToString([]byte(alias))
+}
+
+func cronEndTag(alias string) string { return cronStartTag(alias) + ":end" }
+
+func legacyCronStartTag(alias string) string { return cronMarker + alias }
+func legacyCronEndTag(alias string) string   { return cronMarker + alias + ":end" }
 
 func readCrontab() (string, error) {
 	out, err := exec.Command("crontab", "-l").Output()
@@ -32,17 +39,23 @@ func writeCrontab(content string) error {
 
 // stripCronBlock removes the tagged block for alias from crontab content.
 func stripCronBlock(crontab, alias string) string {
-	start := cronStartTag(alias)
-	end := cronEndTag(alias)
+	starts := map[string]bool{
+		cronStartTag(alias):       true,
+		legacyCronStartTag(alias): true,
+	}
+	ends := map[string]bool{
+		cronEndTag(alias):       true,
+		legacyCronEndTag(alias): true,
+	}
 	var out []string
 	skipping := false
 	for _, line := range strings.Split(crontab, "\n") {
-		if line == start {
+		if starts[line] {
 			skipping = true
 			continue
 		}
 		if skipping {
-			if line == end {
+			if ends[line] {
 				skipping = false
 			}
 			continue
@@ -50,6 +63,30 @@ func stripCronBlock(crontab, alias string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// stripAllCronBlocks removes every tagged mak meeting block.
+func stripAllCronBlocks(crontab string) string {
+	var out []string
+	skipping := false
+	for _, line := range strings.Split(crontab, "\n") {
+		if strings.HasPrefix(line, cronMarker) {
+			if strings.HasSuffix(line, ":end") {
+				skipping = false
+			} else {
+				skipping = true
+			}
+			continue
+		}
+		if !skipping {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 // buildCronBlock generates the tagged cron block for a meeting.
@@ -82,8 +119,8 @@ func buildCronBlock(m Meeting, makPath string) string {
 				cronDays[i] = strconv.Itoa(d)
 			}
 		}
-		line := fmt.Sprintf("%d %d * * %s %s meet open %q",
-			mn, h, strings.Join(cronDays, ","), makPath, m.Alias)
+		line := fmt.Sprintf("%d %d * * %s %s meet open %s",
+			mn, h, strings.Join(cronDays, ","), shellQuote(makPath), shellQuote(m.Alias))
 		cronLines = append(cronLines, line)
 	}
 
@@ -127,6 +164,22 @@ func RemoveCronJob(alias string) error {
 		return fmt.Errorf("reading crontab: %w", err)
 	}
 	crontab = stripCronBlock(crontab, alias)
+	if err := writeCrontab(crontab); err != nil {
+		return fmt.Errorf("writing crontab: %w", err)
+	}
+	return nil
+}
+
+// RemoveAllCronJobs removes every cron block managed by mak.
+func RemoveAllCronJobs() error {
+	if _, err := exec.LookPath("crontab"); err != nil {
+		return nil
+	}
+	crontab, err := readCrontab()
+	if err != nil {
+		return fmt.Errorf("reading crontab: %w", err)
+	}
+	crontab = stripAllCronBlocks(crontab)
 	if err := writeCrontab(crontab); err != nil {
 		return fmt.Errorf("writing crontab: %w", err)
 	}

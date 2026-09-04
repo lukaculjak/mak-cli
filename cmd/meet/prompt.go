@@ -3,6 +3,7 @@ package meet
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +30,21 @@ func promptString(r *bufio.Reader, label, current string) (string, error) {
 			return input, nil
 		}
 		fmt.Println("  This field cannot be empty.")
+	}
+}
+
+func promptURL(r *bufio.Reader, label, current string) (string, error) {
+	for {
+		value, err := promptString(r, label, current)
+		if err != nil {
+			return "", err
+		}
+		parsed, err := url.ParseRequestURI(value)
+		if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			return value, nil
+		}
+		fmt.Println("  Enter a complete http:// or https:// URL.")
+		current = value
 	}
 }
 
@@ -177,7 +193,7 @@ func collectMeetingDetails(r *bufio.Reader, existing *meetings.Meeting, aliasCon
 		}
 
 		// Link
-		link, err := promptString(r, "Meeting link", defaultLink)
+		link, err := promptURL(r, "Meeting link", defaultLink)
 		if err != nil {
 			return nil, err
 		}

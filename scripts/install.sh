@@ -30,6 +30,7 @@ fi
 
 FILENAME="mak_${OS}_${ARCH}.tar.gz"
 URL="https://github.com/$REPO/releases/download/$VERSION/$FILENAME"
+CHECKSUM_URL="https://github.com/$REPO/releases/download/$VERSION/checksums.txt"
 
 echo "Installing mak $VERSION ($OS/$ARCH)..."
 
@@ -37,15 +38,37 @@ TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 curl -fsSL "$URL" -o "$TMP_DIR/$FILENAME"
-tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
+curl -fsSL "$CHECKSUM_URL" -o "$TMP_DIR/checksums.txt"
 
-if [ -w "$INSTALL_DIR" ]; then
-  mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
-else
-  sudo mv "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
+EXPECTED_CHECKSUM=$(awk -v filename="$FILENAME" '$2 == filename || $2 == "*" filename { print $1; exit }' "$TMP_DIR/checksums.txt")
+if [ -z "$EXPECTED_CHECKSUM" ]; then
+  echo "Could not find a checksum for $FILENAME." >&2
+  exit 1
 fi
 
-chmod +x "$INSTALL_DIR/$BINARY"
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL_CHECKSUM=$(sha256sum "$TMP_DIR/$FILENAME" | awk '{print $1}')
+else
+  ACTUAL_CHECKSUM=$(shasum -a 256 "$TMP_DIR/$FILENAME" | awk '{print $1}')
+fi
+
+if [ "$ACTUAL_CHECKSUM" != "$EXPECTED_CHECKSUM" ]; then
+  echo "Checksum verification failed for $FILENAME." >&2
+  exit 1
+fi
+
+tar -xzf "$TMP_DIR/$FILENAME" -C "$TMP_DIR"
+
+if [ ! -f "$TMP_DIR/$BINARY" ]; then
+  echo "Release archive does not contain the mak binary." >&2
+  exit 1
+fi
+
+if [ -w "$INSTALL_DIR" ]; then
+  install -m 0755 "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
+else
+  sudo install -m 0755 "$TMP_DIR/$BINARY" "$INSTALL_DIR/$BINARY"
+fi
 
 echo ""
 echo "mak installed to $INSTALL_DIR/$BINARY"

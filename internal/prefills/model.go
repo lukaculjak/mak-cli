@@ -34,7 +34,7 @@ func (p *Project) Summary() string {
 		sb.WriteString(fmt.Sprintf("  [%s]\n", d.Label))
 		sb.WriteString(fmt.Sprintf("    URL:      %s\n", d.URL))
 		sb.WriteString(fmt.Sprintf("    Email:    %s\n", d.Email))
-		sb.WriteString(fmt.Sprintf("    Password: %s  (only shown locally)\n", d.Password))
+		sb.WriteString("    Password: (set)\n")
 	}
 	return sb.String()
 }

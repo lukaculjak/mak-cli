@@ -15,17 +15,16 @@ func (g *nuxt4Generator) Generate(dir string) error {
 		return fmt.Errorf("creating composables dir: %w", err)
 	}
 
-	files := map[string]string{
-		"useValidationRules.ts": useValidationRules,
-		"useForm.ts":            useForm,
+	files := []generatedFile{
+		{name: "useForm.ts", content: useForm},
+		{name: "useValidationRules.ts", content: useValidationRules},
 	}
 
-	for name, content := range files {
-		path := filepath.Join(composablesDir, name)
-		if err := writeFile(path, content); err != nil {
-			return err
-		}
-		fmt.Printf("  created  app/composables/%s\n", name)
+	if err := writeFiles(composablesDir, files); err != nil {
+		return err
+	}
+	for _, file := range files {
+		fmt.Printf("  created  app/composables/%s\n", file.name)
 	}
 
 	fmt.Println("\nNuxt 4 validation setup complete.")

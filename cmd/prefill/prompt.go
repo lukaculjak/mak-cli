@@ -3,6 +3,7 @@ package prefill
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -44,7 +45,7 @@ func promptPassword(label, current string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		s := strings.TrimSpace(string(pw))
+		s := string(pw)
 		if s == "" && current != "" {
 			return current, nil
 		}
@@ -52,6 +53,21 @@ func promptPassword(label, current string) (string, error) {
 			return s, nil
 		}
 		fmt.Println("  Password cannot be empty.")
+	}
+}
+
+func promptURL(r *bufio.Reader, label, current string) (string, error) {
+	for {
+		value, err := promptString(r, label, current)
+		if err != nil {
+			return "", err
+		}
+		parsed, err := url.ParseRequestURI(value)
+		if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			return value, nil
+		}
+		fmt.Println("  Enter a complete http:// or https:// URL.")
+		current = value
 	}
 }
 
@@ -160,7 +176,7 @@ func collectSingleDomain(r *bufio.Reader) (*prefills.Domain, error) {
 	if err != nil {
 		return nil, err
 	}
-	url, err := promptString(r, "URL", "")
+	url, err := promptURL(r, "URL", "")
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +197,7 @@ func editSingleDomain(r *bufio.Reader, d prefills.Domain) (*prefills.Domain, err
 	if err != nil {
 		return nil, err
 	}
-	url, err := promptString(r, "URL", d.URL)
+	url, err := promptURL(r, "URL", d.URL)
 	if err != nil {
 		return nil, err
 	}

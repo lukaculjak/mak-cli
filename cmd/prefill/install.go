@@ -2,6 +2,7 @@ package prefill
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,11 +15,11 @@ import (
 const hostName = "com.mak.prefill"
 
 type hostManifest struct {
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	Path            string   `json:"path"`
-	Type            string   `json:"type"`
-	AllowedOrigins  []string `json:"allowed_origins"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	Path           string   `json:"path"`
+	Type           string   `json:"type"`
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 func newInstallCmd() *cobra.Command {
@@ -29,6 +30,10 @@ func newInstallCmd() *cobra.Command {
 		Short: "Install the mak prefill browser extension and native messaging host",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if extensionID != "" && !validExtensionID(extensionID) {
+				return fmt.Errorf("invalid extension ID %q: expected 32 lowercase letters from a to p", extensionID)
+			}
+
 			extDir, err := extensionDir()
 			if err != nil {
 				return err
@@ -38,19 +43,18 @@ func newInstallCmd() *cobra.Command {
 				return fmt.Errorf("failed to write extension files: %w", err)
 			}
 			fmt.Printf("Extension files written to: %s\n", extDir)
+			openExtensionDir(extDir)
 
 			binPath, err := resolvedBinaryPath()
 			if err != nil {
 				return fmt.Errorf("could not resolve mak binary path: %w", err)
 			}
 
-			allowedOrigins := []string{}
 			if extensionID != "" {
-				allowedOrigins = []string{fmt.Sprintf("chrome-extension://%s/", extensionID)}
-			}
-
-			if err := installHostManifest(binPath, allowedOrigins); err != nil {
-				return fmt.Errorf("failed to install native host manifest: %w", err)
+				allowedOrigins := []string{fmt.Sprintf("chrome-extension://%s/", extensionID)}
+				if err := installHostManifest(binPath, allowedOrigins); err != nil {
+					return fmt.Errorf("failed to install native host manifest: %w", err)
+				}
 			}
 
 			fmt.Println()
@@ -74,8 +78,20 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&extensionID, "extension-id", "", "Chrome extension ID to allow (run `mak prefill install` first, load the extension, then rerun with this flag)")
+	cmd.Flags().StringVar(&extensionID, "extension-id", "", "Chrome extension ID to allow; run mak prefill install first, load the extension, then rerun with this flag")
 	return cmd
+}
+
+func validExtensionID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for _, char := range id {
+		if char < 'a' || char > 'p' {
+			return false
+		}
+	}
+	return true
 }
 
 func extensionDir() (string, error) {
@@ -112,7 +128,14 @@ func installHostManifest(binPath string, allowedOrigins []string) error {
 	dirs := nativeHostDirs()
 	installed := 0
 	for _, dir := range dirs {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Dir(dir)); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			fmt.Printf("  Warning: could not inspect %s: %v\n", dir, err)
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Printf("  Warning: could not create %s: %v\n", dir, err)
 			continue
 		}
 		dest := filepath.Join(dir, hostName+".json")
@@ -163,6 +186,19 @@ func nativeHostFallbackDir() string {
 	return filepath.Join(home, ".config", "mak", "native-host")
 }
 
+// RemoveHostManifests removes native messaging manifests created by mak.
+func RemoveHostManifests() error {
+	var errs []error
+	dirs := append(nativeHostDirs(), nativeHostFallbackDir())
+	for _, dir := range dirs {
+		path := filepath.Join(dir, hostName+".json")
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("removing %s: %w", path, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // writeExtensionFiles generates all browser extension files into dir.
 func writeExtensionFiles(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -184,15 +220,16 @@ func writeExtensionFiles(dir string) error {
 		}
 	}
 
-	// Try to open the extension dir in Finder/Files after writing
+	return nil
+}
+
+func openExtensionDir(dir string) {
 	switch runtime.GOOS {
 	case "darwin":
-		exec.Command("open", dir).Start()
+		_ = exec.Command("open", dir).Start()
 	case "linux":
-		exec.Command("xdg-open", dir).Start()
+		_ = exec.Command("xdg-open", dir).Start()
 	}
-
-	return nil
 }
 
 // ── Extension file contents ───────────────────────────────────────────────────
@@ -239,6 +276,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !tab.url) return;
+
+  const result = await chrome.storage.session.get('mak_pending_fill');
+  const pending = result.mak_pending_fill;
+  if (!pending || pending.tabId !== tabId || !isUrlMatch(tab.url, pending.url)) return;
+
+  await chrome.storage.session.remove('mak_pending_fill');
+  try {
+    await fillCredentials(tabId, pending.email, pending.password);
+  } catch (err) {
+    console.warn('mak prefill could not fill after navigation:', err);
+  }
+});
+
 async function unlockAndGetProjects(password) {
   return new Promise((resolve, reject) => {
     let port;
@@ -271,7 +323,7 @@ async function unlockAndGetProjects(password) {
 }
 
 async function fillCredentials(tabId, email, password) {
-  await chrome.scripting.executeScript({
+  const [injection] = await chrome.scripting.executeScript({
     target: { tabId },
     func: (email, password) => {
       const emailSelectors = [
@@ -310,6 +362,27 @@ async function fillCredentials(tabId, email, password) {
     },
     args: [email, password],
   });
+
+  const result = injection?.result;
+  if (!result?.emailFilled && !result?.passwordFilled) {
+    throw new Error('No login fields found on this page.');
+  }
+}
+
+function isUrlMatch(tabUrl, domainUrl) {
+  try {
+    const tab = new URL(tabUrl);
+    const domain = new URL(domainUrl);
+    if (tab.origin !== domain.origin) return false;
+    if (domain.pathname === '/') return true;
+
+    const basePath = domain.pathname.endsWith('/')
+      ? domain.pathname
+      : domain.pathname + '/';
+    return tab.pathname === domain.pathname || tab.pathname.startsWith(basePath);
+  } catch {
+    return false;
+  }
 }
 `
 
@@ -538,7 +611,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Lock button
   document.getElementById('lock-btn').addEventListener('click', async () => {
-    await chrome.storage.session.remove(SESSION_KEY);
+    await chrome.storage.session.remove([SESSION_KEY, 'mak_pending_fill']);
     showLockScreen();
   });
 });
@@ -667,26 +740,40 @@ async function handleFill(domain) {
 }
 
 async function handleNavigate(domain) {
-  const isLocalhost = domain.url.includes('localhost') || domain.url.includes('127.0.0.1');
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
 
   // Store pending fill so the extension can fill after navigation
   await chrome.storage.session.set({
-    mak_pending_fill: { email: domain.email, password: domain.password, url: domain.url }
+    mak_pending_fill: {
+      tabId: tab.id,
+      email: domain.email,
+      password: domain.password,
+      url: domain.url,
+    }
   });
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) {
+  try {
     await chrome.tabs.update(tab.id, { url: domain.url });
+    window.close();
+  } catch (err) {
+    await chrome.storage.session.remove('mak_pending_fill');
+    showToast('Could not open the configured URL.');
   }
-  window.close();
 }
 
 function isUrlMatch(tabUrl, domainUrl) {
   if (!tabUrl || !domainUrl) return false;
   try {
     const tab = new URL(tabUrl);
-    const dom = new URL(domainUrl);
-    return tab.hostname === dom.hostname && tab.pathname.startsWith(dom.pathname);
+    const domain = new URL(domainUrl);
+    if (tab.origin !== domain.origin) return false;
+    if (domain.pathname === '/') return true;
+
+    const basePath = domain.pathname.endsWith('/')
+      ? domain.pathname
+      : domain.pathname + '/';
+    return tab.pathname === domain.pathname || tab.pathname.startsWith(basePath);
   } catch {
     return false;
   }

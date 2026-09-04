@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
 	"github.com/spf13/cobra"
@@ -32,12 +33,19 @@ func newNativeHostCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNativeHost(os.Stdin, os.Stdout)
+			return RunNativeHost(os.Stdin, os.Stdout)
 		},
 	}
 }
 
-func runNativeHost(r io.Reader, w io.Writer) error {
+// IsNativeHostInvocation reports whether Chromium launched mak as a native
+// messaging host. Chromium passes the calling extension origin as argv[1].
+func IsNativeHostInvocation(args []string) bool {
+	return len(args) > 0 && strings.HasPrefix(args[0], "chrome-extension://")
+}
+
+// RunNativeHost handles one Chrome Native Messaging request.
+func RunNativeHost(r io.Reader, w io.Writer) error {
 	msg, err := readNativeMessage(r)
 	if err != nil {
 		// If stdin closes cleanly (e.g. extension disconnected), exit silently.

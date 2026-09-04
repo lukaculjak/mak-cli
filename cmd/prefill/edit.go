@@ -60,6 +60,10 @@ func newEditCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
+					if foundIdx, found := prefills.FindProject(projects, name); found != nil && foundIdx != idx {
+						fmt.Printf("  A project named %q already exists.\n", name)
+						continue
+					}
 					updated.Name = name
 
 				case "2":
