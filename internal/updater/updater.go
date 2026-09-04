@@ -104,8 +104,19 @@ func SelfUpdate(currentVersion string) error {
 		return fmt.Errorf("finding current executable: %w", err)
 	}
 
-	// write the new binary to a temp file in the same directory, then rename
-	// (rename is atomic on Unix, avoids a half-written binary)
+	if err := replaceBinary(newBin, execPath); err != nil {
+		return err
+	}
+
+	fmt.Printf("mak updated to v%s\n", latest)
+	return nil
+}
+
+// replaceBinary atomically replaces the executable at execPath with the
+// contents of newBin: it stages a copy in the same directory, marks it
+// executable, then renames it over execPath (rename is atomic on Unix,
+// so execPath never holds a half-written binary).
+func replaceBinary(newBin, execPath string) error {
 	staged, err := os.CreateTemp(filepath.Dir(execPath), "mak-new-*")
 	if err != nil {
 		return fmt.Errorf("staging new binary (try with sudo?): %w", err)
@@ -129,11 +140,13 @@ func SelfUpdate(currentVersion string) error {
 	}
 	dst.Close()
 
+	if err := os.Chmod(staged.Name(), 0o755); err != nil {
+		return fmt.Errorf("making new binary executable: %w", err)
+	}
+
 	if err := os.Rename(staged.Name(), execPath); err != nil {
 		return fmt.Errorf("replacing binary (try running with sudo): %w", err)
 	}
-
-	fmt.Printf("mak updated to v%s\n", latest)
 	return nil
 }
 
