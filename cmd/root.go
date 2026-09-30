@@ -14,10 +14,16 @@ import (
 
 var Version = "dev"
 
+const banner = `▄▄ ▄  ▄▄  ▄ ▄     ▄▄▄ ▄   ▄▄▄
+█ █ █ █▄█ █▄▀ ▄▄▄ █   █    █
+█   █ █ █ █ █     ▀▄▄ █▄▄ ▄█▄`
+
 var rootCmd = &cobra.Command{
 	Use:   "mak",
 	Short: "MagicAtworK CLI tool",
-	Long:  `mak is a personal CLI tool designed for scaffolding projects, blocks of code and automating various tasks in the development workflow.`,
+	Long: banner + `
+
+mak is a personal CLI tool designed for scaffolding projects, blocks of code and automating various tasks in the development workflow.`,
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		if !strings.Contains(cmd.CommandPath(), "update") && !strings.Contains(cmd.CommandPath(), "upgrade") {
 			updater.CheckAndNotify(Version)
