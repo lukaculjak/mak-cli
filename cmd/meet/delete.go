@@ -44,17 +44,13 @@ func newDeleteCmd() *cobra.Command {
 
 			alias := m.Alias
 			list = append(list[:idx], list[idx+1:]...)
-			if err := meetings.Save(list); err != nil {
+			if err := meetings.SaveAndSync(list); err != nil {
 				return err
 			}
 
 			ui.Success(os.Stdout, "%q removed from your meetings.", alias)
 
-			if err := meetings.RemoveCronJob(alias); err != nil {
-				ui.Warning(os.Stdout, "Could not remove cron job: %v", err)
-			} else {
-				fmt.Println("Cron job removed.")
-			}
+			fmt.Println("Cron job removed.")
 
 			return nil
 		},

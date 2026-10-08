@@ -2,6 +2,7 @@ package devenv
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ type fakeSystem struct {
 	fail            string
 	calls           []string
 	dependents      map[string]string
+	aliases         map[string]string
 }
 
 func (f *fakeSystem) run(ctx context.Context, env []string, program string, args ...string) (string, error) {
@@ -35,6 +37,18 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 	if args[0] == "--prefix" {
 		return "/fake/brew\n", nil
 	}
+	if args[0] == "info" {
+		var formulae []map[string]any
+		for _, name := range args[3:] {
+			canonical := name
+			if f.aliases[name] != "" {
+				canonical = f.aliases[name]
+			}
+			formulae = append(formulae, map[string]any{"name": canonical, "aliases": []string{name}})
+		}
+		b, err := json.Marshal(map[string]any{"formulae": formulae})
+		return string(b), err
+	}
 	if args[0] == "uses" {
 		if f.fail != "" && strings.Contains(call, f.fail) {
 			return "", errors.New("simulated failure: " + call)
@@ -47,6 +61,9 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 			packages = f.casks
 		}
 		for _, p := range args[2:] {
+			if f.aliases[p] != "" {
+				p = f.aliases[p]
+			}
 			packages[p] = true
 		}
 		if args[1] == "--formula" {
@@ -157,8 +174,8 @@ func TestSetupRollbackAtEachExternalStep(t *testing.T) {
 			if !reflect.DeepEqual(f.formulae, map[string]bool{"git": true, "shared-dependency": true}) || !reflect.DeepEqual(f.casks, map[string]bool{"existing-app": true}) {
 				t.Fatalf("packages were not restored: %v %v", f.formulae, f.casks)
 			}
-			if _, err := os.Stat(filepath.Join(i.home, ".config/mak/dev-setup.lock")); !os.IsNotExist(err) {
-				t.Fatalf("setup lock left behind: %v", err)
+			if locked, err := setupLocked(filepath.Join(i.home, ".config/mak/dev-setup.lock")); err != nil || locked {
+				t.Fatalf("setup lock is still held: %v", err)
 			}
 		})
 	}

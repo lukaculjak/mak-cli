@@ -2,6 +2,7 @@ package meetings
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -138,6 +139,33 @@ func makExecutable() string {
 		return path
 	}
 	return "mak"
+}
+
+// SaveAndSync commits the meetings and their schedules together. A failed cron
+// update leaves the meeting file untouched; a failed save restores the old cron.
+func SaveAndSync(list []Meeting) error {
+	return saveAndSync(list, readCrontab, writeCrontab, Save)
+}
+
+func saveAndSync(list []Meeting, read func() (string, error), write func(string) error, save func([]Meeting) error) error {
+	previous, err := read()
+	if err != nil {
+		return fmt.Errorf("reading crontab: %w", err)
+	}
+	next := strings.TrimRight(stripAllCronBlocks(previous), "\n") + "\n"
+	for _, meeting := range list {
+		next += buildCronBlock(meeting, makExecutable())
+	}
+	if err := write(next); err != nil {
+		return fmt.Errorf("updating schedules; meetings were not saved: %w", err)
+	}
+	if err := save(list); err != nil {
+		if restoreErr := write(previous); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("restoring previous cron failed: %w; retry the meeting change to reconcile schedules", restoreErr))
+		}
+		return fmt.Errorf("saving meetings; previous schedules restored: %w", err)
+	}
+	return nil
 }
 
 // SyncCronJob creates or replaces the cron entries for a meeting.

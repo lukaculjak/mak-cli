@@ -21,7 +21,7 @@ func configureHelp(root *cobra.Command) {
 
 func humanOutput(cmd *cobra.Command) bool {
 	for current := cmd; current != nil; current = current.Parent() {
-		if current.Hidden || current.Name() == "completion" {
+		if current.Hidden || current.Name() == "completion" || current.Name() == "shellenv" {
 			return false
 		}
 	}

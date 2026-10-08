@@ -21,14 +21,16 @@ import (
 const ownershipFile = ".mak-install-id"
 
 type installationRecord struct {
-	Version      int             `json:"version"`
-	ID           string          `json:"id"`
-	Brew         string          `json:"brew"`
-	Paths        []installedPath `json:"paths"`
-	Formulae     []string        `json:"formulae"`
-	Casks        []string        `json:"casks"`
-	Shell        []shellChange   `json:"shell,omitempty"`
-	Uninstalling bool            `json:"uninstalling,omitempty"`
+	Version      int               `json:"version"`
+	ID           string            `json:"id"`
+	Brew         string            `json:"brew"`
+	Paths        []installedPath   `json:"paths"`
+	Formulae     []string          `json:"formulae"`
+	Casks        []string          `json:"casks"`
+	Packages     map[string]string `json:"packages,omitempty"`
+	Shell        []shellChange     `json:"shell,omitempty"`
+	Uninstalling bool              `json:"uninstalling,omitempty"`
+	Removing     string            `json:"removing,omitempty"`
 }
 
 type installedPath struct {
@@ -66,22 +68,40 @@ func (i *installer) readRecord() (*installationRecord, error) {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, fmt.Errorf("invalid installation record %s: %w", path, err)
 	}
+	if err := validateRecord(&r); err != nil {
+		return nil, fmt.Errorf("invalid installation record %s: %w", path, err)
+	}
+	return &r, nil
+}
+
+func validateRecord(r *installationRecord) error {
 	id, err := hex.DecodeString(r.ID)
-	if r.Version != 1 || err != nil || len(id) != 16 || !filepath.IsAbs(r.Brew) || len(r.Paths) != 4 {
-		return nil, fmt.Errorf("invalid or unsupported installation record %s; files left untouched", path)
+	if r.Version != 1 || err != nil || len(id) != 16 || !filepath.IsAbs(r.Brew) || (len(r.Paths) != 0 && len(r.Paths) != 4) {
+		return fmt.Errorf("invalid or unsupported installation record; files left untouched")
+	}
+	if r.Removing != "" {
+		if _, err := PackageName(r.Removing); err != nil {
+			return fmt.Errorf("invalid package removal in installation record: %w", err)
+		}
 	}
 	packageName := regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9@+._/\-]*$`)
 	for _, name := range append(slices.Clone(r.Formulae), r.Casks...) {
 		if !packageName.MatchString(name) {
-			return nil, fmt.Errorf("invalid package in installation record: %q", name)
+			return fmt.Errorf("invalid package in installation record: %q", name)
+		}
+	}
+	for alias, name := range r.Packages {
+		canonical, err := PackageName(alias)
+		if err != nil || canonical != alias || (!slices.Contains(r.Formulae, name) && !slices.Contains(r.Casks, name)) {
+			return fmt.Errorf("invalid package mapping in installation record")
 		}
 	}
 	for _, s := range r.Shell {
 		if !filepath.IsAbs(s.Path) || !strings.HasPrefix(s.Block, "\n# Homebrew coding tools (mak setup dev)\neval ") || !strings.HasSuffix(s.Block, " shellenv)\"\n") {
-			return nil, fmt.Errorf("invalid shell change in installation record")
+			return fmt.Errorf("invalid shell change in installation record")
 		}
 	}
-	return &r, nil
+	return nil
 }
 
 func (i *installer) saveRecord(r *installationRecord) error {
@@ -90,7 +110,7 @@ func (i *installer) saveRecord(r *installationRecord) error {
 		return err
 	}
 	path := i.recordPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := mkdirAllSynced(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	return atomicWrite(path, append(b, '\n'), 0o600)
@@ -115,20 +135,45 @@ func atomicWrite(path string, contents []byte, mode os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 func (i *installer) recordInstallation(ctx context.Context, r *installationRecord) error {
 	if r == nil {
-		id := make([]byte, 16)
-		if _, err := rand.Read(id); err != nil {
+		var err error
+		r, err = i.newRecord()
+		if err != nil {
 			return err
 		}
-		r = &installationRecord{Version: 1, ID: hex.EncodeToString(id), Brew: i.brew}
+	}
+	if len(r.Paths) == 0 {
 		for _, p := range i.paths {
 			r.Paths = append(r.Paths, installedPath{Path: p.path, Backup: p.backup})
 		}
 	}
+	if i.journal != nil {
+		return i.recordPackages(ctx, r)
+	}
+	for _, p := range i.paths {
+		if err := os.WriteFile(filepath.Join(p.path, ownershipFile), []byte(r.ID), 0o600); err != nil {
+			return err
+		}
+	}
+	return i.recordPackages(ctx, r)
+}
+
+func (i *installer) newRecord() (*installationRecord, error) {
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return nil, err
+	}
+	return &installationRecord{Version: 1, ID: hex.EncodeToString(id), Brew: i.brew}, nil
+}
+
+func (i *installer) recordPackages(ctx context.Context, r *installationRecord) error {
 	for _, packages := range []struct {
 		kind   string
 		before map[string]bool
@@ -147,15 +192,22 @@ func (i *installer) recordInstallation(ctx context.Context, r *installationRecor
 		}
 		slices.Sort(*packages.owned)
 	}
+	names, err := i.catalogNames(ctx)
+	if err != nil {
+		return err
+	}
+	if r.Packages == nil {
+		r.Packages = map[string]string{}
+	}
+	for alias, name := range names {
+		if slices.Contains(r.Formulae, name) || slices.Contains(r.Casks, name) {
+			r.Packages[alias] = name
+		}
+	}
 	if i.shell != nil {
 		r.Shell = append(r.Shell, *i.shell)
 	}
-	for _, p := range i.paths {
-		if err := os.WriteFile(filepath.Join(p.path, ownershipFile), []byte(r.ID), 0o600); err != nil {
-			return err
-		}
-	}
-	return i.saveRecord(r)
+	return i.commitInstallationRecord(r)
 }
 
 func ownedDirectory(path, id string) bool {
@@ -219,7 +271,8 @@ func Uninstall(ctx context.Context, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	i := &installer{home: home, env: os.Environ(), out: out, run: runner(in, out)}
+	i := &installer{home: home, env: os.Environ(), out: out}
+	i.run = runner(in, out, func() *os.File { return i.lockFile })
 	return i.uninstall(ctx)
 }
 
@@ -231,10 +284,19 @@ func (i *installer) uninstall(ctx context.Context) error {
 	defer unlock()
 	r, err := i.readRecord()
 	if os.IsNotExist(err) {
+		if i.recoveredSetup {
+			ui.Success(i.out, "Interrupted setup recovered; no tracked environment remains to uninstall. Preexisting software is preserved.")
+			return nil
+		}
 		return fmt.Errorf("no tracked coding environment at %s; older setups cannot be safely uninstalled automatically. No Neovim files or packages were changed", i.recordPath())
 	}
 	if err != nil {
 		return err
+	}
+	if len(r.Paths) != 0 {
+		if err := i.checkNeovim(ctx); err != nil {
+			return err
+		}
 	}
 	if err := i.checkPaths(r); err != nil {
 		return err
@@ -249,54 +311,17 @@ func (i *installer) uninstall(ctx context.Context) error {
 		return err
 	}
 	r.Uninstalling = true
+	r.Removing = ""
 	if err := i.saveRecord(r); err != nil {
 		return err
 	}
-	ui.Warning(i.out, "Removing mak's Neovim environment, including local edits, plugins and language servers; restoring original backups.")
-	for n := len(r.Paths) - 1; n >= 0; n-- {
-		p := &r.Paths[n]
-		if p.Done {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		p.Restoring = true
-		if err := i.saveRecord(r); err != nil {
-			return err
-		}
-		// Move the managed directory before deleting it. If deletion fails
-		// halfway through (including removal of its ownership marker), retry
-		// can continue on the recorded staging path without touching originals.
-		discard := discardPath(*p, r.ID)
-		if _, err := os.Lstat(p.Path); err == nil {
-			if !ownedDirectory(p.Path, r.ID) {
-				return fmt.Errorf("%s changed during uninstall; files left untouched", p.Path)
-			}
-			if _, err := os.Lstat(discard); err == nil {
-				return fmt.Errorf("both %s and %s exist; inspect them before retrying", p.Path, discard)
-			} else if !os.IsNotExist(err) {
-				return err
-			}
-			if err := os.Rename(p.Path, discard); err != nil {
-				return fmt.Errorf("staging %s for removal: %w", p.Path, err)
-			}
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		if err := os.RemoveAll(discard); err != nil {
-			return fmt.Errorf("removing %s: %w; retry mak setup dev --uninstall", discard, err)
-		}
-		if p.Backup != "" {
-			if err := os.Rename(p.Backup, p.Path); err != nil {
-				return fmt.Errorf("restoring %s from %s: %w; retry mak setup dev --uninstall", p.Path, p.Backup, err)
-			}
-			ui.Step(i.out, "Restored %s.", p.Path)
-		}
-		p.Done = true
-		if err := i.saveRecord(r); err != nil {
-			return err
-		}
+	if len(r.Paths) != 0 {
+		ui.Warning(i.out, "Removing mak's Neovim environment, including local edits, plugins and language servers; restoring original backups.")
+	} else {
+		ui.Step(i.out, "Removing the remaining tracked coding packages.")
+	}
+	if err := i.restorePaths(ctx, r, i.saveRecord); err != nil {
+		return err
 	}
 	for _, s := range r.Shell {
 		if err := removeShellChange(s); err != nil {
@@ -313,19 +338,8 @@ func (i *installer) uninstall(ctx context.Context) error {
 			continue
 		}
 		ui.Step(i.out, "Removing Homebrew packages: %s", strings.Join(packages.names, ", "))
-		// Never force removal or ignore dependencies: Homebrew checks again in
-		// case another installed tool started depending on these packages.
-		if _, err := i.run(ctx, i.env, i.brew, append([]string{"uninstall", packages.kind}, packages.names...)...); err != nil {
-			return fmt.Errorf("removing coding tools: %w; installation record retained, retry mak setup dev --uninstall", err)
-		}
-		remaining, err := i.inventory(ctx, packages.kind)
-		if err != nil {
-			return err
-		}
-		for _, name := range packages.names {
-			if remaining[name] {
-				return fmt.Errorf("Homebrew still lists %s; installation record retained, retry mak setup dev --uninstall", name)
-			}
+		if err := i.removePackages(ctx, packages.kind, packages.names); err != nil {
+			return fmt.Errorf("%w; installation record retained, retry mak setup dev --uninstall", err)
 		}
 	}
 	if err := os.Remove(i.recordPath()); err != nil {
@@ -333,6 +347,73 @@ func (i *installer) uninstall(ctx context.Context) error {
 	}
 	ui.Success(i.out, "Coding environment removed; previous Neovim files restored where backups existed.")
 	fmt.Fprintln(i.out, "Homebrew, Apple developer tools, download caches and shared packages remain. Open a new terminal to refresh your PATH.")
+	return nil
+}
+
+func (i *installer) restorePaths(ctx context.Context, r *installationRecord, checkpoint func(*installationRecord) error) error {
+	for n := len(r.Paths) - 1; n >= 0; n-- {
+		p := &r.Paths[n]
+		if p.Done {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		p.Restoring = true
+		if err := checkpoint(r); err != nil {
+			return err
+		}
+		// Move the managed directory before deleting it. If deletion fails
+		// halfway through (including removal of its ownership marker), retry
+		// can continue on the recorded staging path without touching originals.
+		discard := discardPath(*p, r.ID)
+		if _, err := os.Lstat(p.Path); err == nil {
+			if !ownedDirectory(p.Path, r.ID) {
+				return fmt.Errorf("%s changed during uninstall; files left untouched", p.Path)
+			}
+			if _, err := os.Lstat(discard); err == nil {
+				return fmt.Errorf("both %s and %s exist; inspect them before retrying", p.Path, discard)
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+			if err := renameDirectory(p.Path, discard); err != nil {
+				return fmt.Errorf("staging %s for removal: %w", p.Path, err)
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.RemoveAll(discard); err != nil {
+			return fmt.Errorf("removing %s: %w; retry mak setup dev --uninstall", discard, err)
+		}
+		if p.Backup != "" {
+			if err := renameDirectory(p.Backup, p.Path); err != nil {
+				return fmt.Errorf("restoring %s from %s: %w; retry mak setup dev --uninstall", p.Path, p.Backup, err)
+			}
+			ui.Step(i.out, "Restored %s.", p.Path)
+		}
+		p.Done = true
+		if err := checkpoint(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (i *installer) removePackages(ctx context.Context, kind string, names []string) error {
+	// Never force removal or ignore dependencies; also disable global autoremove.
+	env := setEnv(i.env, "HOMEBREW_NO_AUTOREMOVE", "1")
+	if _, err := i.run(ctx, env, i.brew, append([]string{"uninstall", kind}, names...)...); err != nil {
+		return fmt.Errorf("removing coding tools: %w", err)
+	}
+	remaining, err := i.inventory(ctx, kind)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if remaining[name] {
+			return fmt.Errorf("Homebrew still lists %s", name)
+		}
+	}
 	return nil
 }
 

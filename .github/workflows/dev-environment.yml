@@ -1,0 +1,26 @@
+name: Development environment smoke test
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build -o bin/mak .
+      - name: Vet and test on macOS
+        run: |
+          go vet ./...
+          go test -race ./...
+      - name: Install, diagnose, and remove in an isolated home
+        run: bash scripts/test-dev-environment.sh

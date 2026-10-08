@@ -2,6 +2,8 @@
 
 `mak` is a personal developer CLI for installing a coding environment, generating validation composables, opening
 recurring meetings, and managing encrypted browser-login prefills.
+It is opinionated around Luka's own setup; anyone is welcome to use that same
+environment. It is not intended as a configurable environment manager.
 
 ## Install
 
@@ -26,7 +28,7 @@ Colors and terminal separators are disabled when output is redirected, when
 NO_COLOR=1 mak setup --help
 ```
 
-Shell-completion scripts and browser native-messaging responses stay free of
+Shell-completion scripts, `mak shellenv`, and browser native-messaging responses stay free of
 styling and command separators. The shell still controls the prompt and the
 commands you type; mak styles its own output.
 
@@ -39,6 +41,12 @@ Close Neovim, then run as your normal user:
 ```sh
 mak setup dev
 ```
+
+The command asks `Install the development environment? [Y/n]:`. Press Enter
+for yes or enter `no` to cancel before anything is installed or replaced. A hint
+above the prompt points to the package list. To explicitly skip this confirmation
+(for example, in a script), use `mak setup dev --yes` or `-y`. Missing stdin is
+an error rather than an automatic yes. Homebrew/sudo may still request input.
 
 `mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
 if needed, Neovim, Git, Node/npm, Go, Python, Ruby, Elixir/Erlang, GHC/Cabal/Haskell
@@ -70,14 +78,46 @@ the old directories, and removes Homebrew formulae/casks introduced by the run,
 including their newly installed formula dependencies. Existing packages are not
 upgraded or uninstalled. Homebrew itself, Apple's developer tools, and package
 download caches remain shared system prerequisites. If rollback fails, the error
-identifies what still needs attention and the backup locations. An interrupted
-process that cannot run cleanup (for example, power loss or SIGKILL) may leave
-`~/.config/mak/dev-setup.lock`; inspect the backups before removing that lock and
-retrying. Keep the original backups to allow restoration with `--uninstall`.
+identifies what still needs attention and the backup locations. A durable journal
+at `$XDG_STATE_HOME/mak/dev-setup-journal.json` (default `~/.local/state/mak`)
+records package inventories and planned backups before changes. After power loss
+or SIGKILL, close Neovim and rerun the setup/install/remove command with the same
+XDG settings. mak automatically restores an incomplete installation, or finishes
+saving the ownership record if setup already passed verification. Interrupted
+cleanup retains its checkpoints so the next invocation can continue.
+
+The setup lock is a persistent file held by the process and inherited by its
+installation subprocesses. It releases automatically when those processes exit;
+do not delete it. Legacy lock **directories** from older mak versions still need
+inspection before manual removal. Avoid other Homebrew installs until recovery
+completes, since introduced packages are identified against the saved inventory.
+Keep original backups and the recovery journal until recovery completes.
 
 Open a new terminal after setup. For zsh/bash, mak adds Homebrew's `shellenv`
 line to `.zprofile`/`.bash_profile` without replacing your shell settings (zsh's
-`ZDOTDIR` is respected). Select **JetBrainsMono Nerd Font** in your terminal's font
+`ZDOTDIR` is respected). mak refreshes PATH for its own installation processes;
+it cannot change the parent shell's environment. To refresh the current zsh/bash
+session immediately, run:
+
+```sh
+eval "$(mak shellenv)"
+```
+
+`mak shellenv` prints shell code; `eval` applies it in the shell you are already
+using. It loads Homebrew's environment, adds installed Ruby/Python tool paths and
+Homebrew's executable directories before system paths, and clears cached command
+locations. Existing user/project paths stay first, preserving activated virtual
+environments and runtimes selected through nvm/rbenv.
+When run directly in a terminal, it prints an orange reminder on stderr explaining
+how to apply the settings (including `eval "$(go run . shellenv)"` from source).
+The reminder is omitted when stdout is captured or redirected, keeping `eval` quiet
+and shell-code output clean. Normal `NO_COLOR` and terminal color rules apply.
+Existing PATH entries are preserved; repeating it does not duplicate the managed
+directories. It does not install software, edit profiles, or reload unrelated
+shell settings. Other shells need their own Homebrew PATH setup. You can still
+reload your full profile with `source "${ZDOTDIR:-$HOME}/.zprofile"` (zsh) or
+`source "$HOME/.bash_profile"` (bash).
+Select **JetBrainsMono Nerd Font** in your terminal's font
 settings, then run `nvim`. Project dependencies, Python virtual environments,
 Ruby bundles, and non-baseline GHC/HLS versions remain project-specific.
 
@@ -95,6 +135,69 @@ or release mak again. `mak update` updates the executable; rerun `mak setup dev`
 to apply its bundled environment. Local Neovim edits are replaced on that rerun,
 with another backup retained. Running `:Lazy update` yourself changes your local
 plugin versions; the next mak setup restores the bundled versions.
+
+Preview all offered software without installing anything:
+
+```sh
+mak setup dev --list  # or -l
+```
+
+The checklist uses a green `[x]` for installed Homebrew packages and a red `[ ]`
+for missing packages, with orange headings. It shows both preexisting software
+and software installed by mak; `(tracked by mak)` indicates removable ownership.
+Colors follow the normal `NO_COLOR`, terminal, and redirected-output rules.
+Neovim's checkbox indicates whether the application is installed, not whether
+the LazyVim environment has been fully configured. Software installed outside
+Homebrew is not detected. Homebrew aliases such as Python's versioned formula
+name are resolved and recorded so the correct package is listed and removed.
+
+Manage one offered package by the name printed in the list:
+
+```sh
+mak setup dev --install node  # or -i node
+mak setup dev --remove node   # or -r node
+mak setup dev -i nvim         # full LazyVim environment, with confirmation
+mak setup dev -r nvim         # Neovim only, restoring its original files
+mak setup dev -i font         # JetBrains Mono Nerd Font
+```
+
+`nvim` is an alias for `neovim`, and `font` is an alias for
+`font-jetbrains-mono-nerd-font`. Installing Neovim runs the complete environment
+setup, including the bundled configuration, language runtimes, plugins, LSPs,
+and parsers. Other individual installs add only the selected Homebrew package
+and its dependencies, retaining ownership for later cleanup. Already installed
+packages are left as is and are not newly claimed by mak.
+
+Single-package removal refuses untracked packages and packages required by other
+installed Homebrew software. It keeps the selected package's dependencies and
+all other coding tools; `--uninstall` can clean up the remaining tracked packages.
+Removing a tracked Neovim also removes its managed files, including local edits,
+and restores the original backups. Removing other packages leaves Neovim files
+alone; removing a runtime can disable language servers that need it. Failed
+removals retain progress so the same `--remove PACKAGE` command can resume.
+The list, install, remove, and full-uninstall flags are mutually exclusive.
+
+Check the coding environment without installing, updating, or repairing it:
+
+```sh
+mak doctor          # alias: mak healthcheck
+```
+
+Doctor reports tools available on PATH, Apple developer tools, Homebrew packages,
+installation tracking and recovery files, bundled configuration changes, locked
+plugin revisions, syntax parsers, completion capabilities, and language-server
+startup. Green success messages, orange warnings, and red errors include suggested
+repair commands where needed. Repairs are never run automatically. The final line
+prints the current mak version. Failed checks exit with status 1; warnings alone
+exit with status 0.
+
+Neovim checks run against the installed plugins and tools with temporary copies of
+configuration and ElixirLS caches. The macOS sandbox blocks downloads and writes
+outside the temporary directory; scratch files are removed afterward. A running
+setup/removal skips runtime checks with a warning. Diagnostics check a temporary
+sample project, so project-specific dependencies or GHC/HLS compatibility may
+still need attention in your actual project. Font installation is checked;
+selecting the font in your terminal remains manual.
 
 To remove a tracked coding environment, close Neovim and run:
 
@@ -115,8 +218,8 @@ Setup saves its recovery record at `~/.local/state/mak/dev-environment.json`
 (or `$XDG_STATE_HOME/mak/dev-environment.json`). Keep this file, the adjacent
 Neovim backups, and the same XDG settings until uninstall completes. A failed
 uninstall retains its progress so the same command can resume without deleting
-already restored files. After a power loss or SIGKILL, inspect the backups and
-remove the stale `dev-setup.lock` before retrying.
+already restored files. After power loss or SIGKILL, rerun the same command;
+the process lock releases automatically and removal resumes from its checkpoints.
 
 Installations made before recovery tracking was added cannot be automatically
 uninstalled: mak reports the missing record and leaves Neovim files and packages
@@ -147,6 +250,11 @@ mak meet delete <alias>
 
 Meetings are stored in `~/.config/mak/meetings.json`. Recurring schedules are
 installed in the current user's crontab and open links with the system browser.
+Add/edit/delete only report success after both the meeting file and schedules are
+saved. A failed cron update leaves the meeting file unchanged; a failed file save
+restores the previous cron. Each successful change reconciles all managed meeting
+schedules while preserving unrelated cron entries. If restoring cron fails, mak
+returns an error with recovery instructions.
 
 ### Credential prefills
 
@@ -184,6 +292,10 @@ the archive matches the release checksum. A normal uninstall preserves user
 data. `--purge` additionally removes mak configuration, credentials, native
 messaging manifests, and managed meeting cron jobs.
 
+Automatic update notifications cache release checks for 24 hours, including
+failed checks, and allow at most 250 ms for a network request. The explicit
+`mak update` command always checks for the latest release independently.
+
 ## Development
 
 The project requires the Go version declared in `go.mod`.
@@ -195,6 +307,12 @@ go build ./...
 ```
 
 Tags matching `v*` trigger the GitHub Actions release workflow and GoReleaser.
+CI runs vet, race tests, and builds on Linux and macOS. Releases also require a
+disposable macOS runner to install the bundled environment in an isolated home,
+run doctor, uninstall it, and verify original files and preexisting packages.
+The same smoke test can be launched through the Development environment smoke
+test workflow. `scripts/test-dev-environment.sh` is for disposable macOS GitHub
+Actions runners only; it installs and removes Homebrew packages.
 
 ## License
 

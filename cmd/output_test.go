@@ -26,12 +26,13 @@ func TestHelpRetainsDefaultCobraOutputWhenRedirected(t *testing.T) {
 func TestMachineCommandsHaveNoHumanOutput(t *testing.T) {
 	root := &cobra.Command{Use: "mak"}
 	completion := &cobra.Command{Use: "completion"}
+	shellenv := newShellenvCmd()
 	bash := &cobra.Command{Use: "bash"}
 	hidden := &cobra.Command{Use: "native-host", Hidden: true}
 	regular := &cobra.Command{Use: "setup"}
-	root.AddCommand(completion, hidden, regular)
+	root.AddCommand(completion, shellenv, hidden, regular)
 	completion.AddCommand(bash)
-	for _, cmd := range []*cobra.Command{completion, bash, hidden} {
+	for _, cmd := range []*cobra.Command{completion, bash, shellenv, hidden} {
 		if humanOutput(cmd) {
 			t.Fatalf("machine output would be decorated: %s", cmd.CommandPath())
 		}

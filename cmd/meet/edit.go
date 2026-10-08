@@ -48,17 +48,13 @@ func newEditCmd() *cobra.Command {
 			}
 
 			list[idx] = *updated
-			if err := meetings.Save(list); err != nil {
+			if err := meetings.SaveAndSync(list); err != nil {
 				return err
 			}
 
 			ui.Success(os.Stdout, "%q updated.", updated.Alias)
 
-			if err := meetings.SyncCronJob(originalAlias, *updated); err != nil {
-				ui.Warning(os.Stdout, "Could not update cron job: %v", err)
-			} else {
-				fmt.Println("Cron job updated.")
-			}
+			fmt.Println("Cron job updated.")
 
 			return nil
 		},

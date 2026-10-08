@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/lukaculjak/mak-cli/cmd/meet"
 	"github.com/lukaculjak/mak-cli/cmd/prefill"
 	"github.com/lukaculjak/mak-cli/cmd/setup"
+	"github.com/lukaculjak/mak-cli/internal/devenv"
 	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/lukaculjak/mak-cli/internal/updater"
 	"github.com/spf13/cobra"
@@ -54,7 +56,9 @@ func Execute() {
 	}
 
 	if command, err := rootCmd.ExecuteC(); err != nil {
-		ui.Error(os.Stderr, "%v", err)
+		if !errors.Is(err, errDoctorReported) {
+			ui.Error(os.Stderr, "%v", err)
+		}
 		if command != nil && (command == rootCmd || !command.SilenceUsage) {
 			fmt.Fprintf(os.Stderr, "Run '%s --help' for usage.\n", command.CommandPath())
 		}
@@ -70,4 +74,6 @@ func init() {
 	rootCmd.AddCommand(prefill.NewPrefillCmd())
 	rootCmd.AddCommand(newUpdateCmd())
 	rootCmd.AddCommand(newUninstallCmd())
+	rootCmd.AddCommand(newDoctorCmd(devenv.Doctor))
+	rootCmd.AddCommand(newShellenvCmd())
 }

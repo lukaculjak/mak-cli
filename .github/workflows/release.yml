@@ -9,7 +9,11 @@ permissions:
   contents: write
 
 jobs:
+  dev-environment:
+    uses: ./.github/workflows/dev-environment.yml
+
   release:
+    needs: dev-environment
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

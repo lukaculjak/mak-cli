@@ -330,9 +330,9 @@ func TestResumeAfterPartiallyDeletingStagedEnvironment(t *testing.T) {
 	}
 }
 
-func TestRecordWriteFailureRollsBackFilesPackagesAndShell(t *testing.T) {
+func TestRecordWriteFailureRetainsVerifiedCommitForRecovery(t *testing.T) {
 	i, f := testInstaller(t)
-	paths := seedEnvironment(t, i)
+	seedEnvironment(t, i)
 	profile := filepath.Join(i.home, ".zprofile")
 	original := "export KEEP=1\n"
 	if err := os.WriteFile(profile, []byte(original), 0o600); err != nil {
@@ -342,9 +342,8 @@ func TestRecordWriteFailureRollsBackFilesPackagesAndShell(t *testing.T) {
 	i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
 		result, err := run(ctx, env, program, args...)
 		if filepath.Base(program) == "nvim" && envValue(env, "MAK_NVIM_PHASE") == "verify" {
-			// A file in place of the record directory makes saving fail after
-			// Neovim installation and shell configuration have succeeded.
-			if err := os.WriteFile(filepath.Join(envValue(env, "XDG_STATE_HOME"), "mak"), []byte("obstruction"), 0o600); err != nil {
+			// Obstruct the final record without obstructing its recovery journal.
+			if err := os.Mkdir(filepath.Join(envValue(env, "XDG_STATE_HOME"), "mak/dev-environment.json"), 0o700); err != nil {
 				return "", err
 			}
 		}
@@ -353,13 +352,34 @@ func TestRecordWriteFailureRollsBackFilesPackagesAndShell(t *testing.T) {
 	if err := i.setup(context.Background()); err == nil || !strings.Contains(err.Error(), "saving installation record") {
 		t.Fatalf("expected record failure: %v", err)
 	}
-	assertOriginals(t, paths)
-	b, _ := os.ReadFile(profile)
-	if string(b) != original {
-		t.Fatalf("shell block was not rolled back: %s", b)
+	j, err := i.readSetupJournal()
+	if err != nil || j.Commit == nil {
+		t.Fatalf("verified commit was not retained: %v", err)
 	}
-	if !reflect.DeepEqual(f.formulae, map[string]bool{"git": true, "shared-dependency": true}) {
-		t.Fatalf("packages not rolled back: %v", f.formulae)
+	if err := os.Remove(i.recordPath()); err != nil {
+		t.Fatal(err)
+	}
+	next := nextInvocation(i, f)
+	unlock, err := next.prepare(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if _, err := next.readRecord(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(next.paths[0].path, "init.lua")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(next.journalPath()); !os.IsNotExist(err) {
+		t.Fatal("commit journal was not cleared")
+	}
+	b, _ := os.ReadFile(profile)
+	if !strings.Contains(string(b), original) || !strings.Contains(string(b), "Homebrew coding tools") {
+		t.Fatal("verified shell changes were lost")
+	}
+	if !f.formulae["neovim"] {
+		t.Fatal("verified packages were removed")
 	}
 }
 

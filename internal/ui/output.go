@@ -62,6 +62,16 @@ func Heading(w io.Writer, format string, args ...any) {
 	fmt.Fprintln(w, p.paint(p.orange, fmt.Sprintf(format, args...)))
 }
 
+// Check prints an installed/missing indicator, coloring only the checkbox.
+func Check(w io.Writer, installed bool, format string, args ...any) {
+	p := colors(w)
+	label, code := "[ ]", "1;31"
+	if installed {
+		label, code = "[x]", "1;32"
+	}
+	fmt.Fprintf(w, "%s %s\n", p.paint(code, label), fmt.Sprintf(format, args...))
+}
+
 func message(w io.Writer, label, format string, args ...any) {
 	p := colors(w)
 	code := p.orange
@@ -69,7 +79,7 @@ func message(w io.Writer, label, format string, args ...any) {
 	case "ok":
 		code = "1;32"
 	case "warning":
-		code = "1;33"
+		code = p.orange
 	case "error":
 		code = "1;31"
 	}

@@ -34,17 +34,13 @@ func newAddCmd() *cobra.Command {
 			}
 
 			list = append(list, *m)
-			if err := meetings.Save(list); err != nil {
+			if err := meetings.SaveAndSync(list); err != nil {
 				return err
 			}
 
 			ui.Success(os.Stdout, "%q added to your meetings.", m.Alias)
 
-			if err := meetings.SyncCronJob(m.Alias, *m); err != nil {
-				ui.Warning(os.Stdout, "Could not create cron job: %v", err)
-			} else {
-				fmt.Println("Cron job created, mak will open it automatically at the scheduled time.")
-			}
+			fmt.Println("Cron job created, mak will open it automatically at the scheduled time.")
 
 			return nil
 		},

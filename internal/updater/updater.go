@@ -26,11 +26,16 @@ const releaseURL = "https://github.com/lukaculjak/mak-cli/releases/download"
 
 var downloadClient = &http.Client{Timeout: 30 * time.Second}
 var metadataClient = &http.Client{Timeout: 3 * time.Second}
+var notificationClient = &http.Client{Timeout: 250 * time.Millisecond}
 
 // LatestVersion fetches the latest release tag from GitHub and returns the
 // version string without the "v" prefix (e.g. "0.1.0").
 func LatestVersion() (string, error) {
-	resp, err := metadataClient.Get(apiURL)
+	return latestVersion(metadataClient)
+}
+
+func latestVersion(client *http.Client) (string, error) {
+	resp, err := client.Get(apiURL)
 	if err != nil {
 		return "", err
 	}
@@ -63,10 +68,13 @@ func CheckAndNotify(currentVersion string) {
 	if currentVersion == "dev" {
 		return
 	}
-	latest, err := LatestVersion()
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return
 	}
+	latest := cachedLatestVersion(filepath.Join(cacheDir, "mak", "update-check.json"), time.Now(), func() (string, error) {
+		return latestVersion(notificationClient)
+	})
 	if versionIsNewer(latest, currentVersion) {
 		fmt.Println()
 		ui.Warning(os.Stdout, "A new version of mak is available (v%s)! Run `mak update` to upgrade.", latest)
