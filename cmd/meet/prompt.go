@@ -9,14 +9,15 @@ import (
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 )
 
 func promptString(r *bufio.Reader, label, current string) (string, error) {
 	for {
 		if current != "" {
-			fmt.Printf("%s [%s]: ", label, current)
+			ui.Prompt("%s [%s]: ", label, current)
 		} else {
-			fmt.Printf("%s: ", label)
+			ui.Prompt("%s: ", label)
 		}
 		input, err := r.ReadString('\n')
 		if err != nil {
@@ -50,7 +51,7 @@ func promptURL(r *bufio.Reader, label, current string) (string, error) {
 
 func promptConfirm(r *bufio.Reader, label string) (bool, error) {
 	for {
-		fmt.Printf("%s (y/n): ", label)
+		ui.Prompt("%s (y/n): ", label)
 		input, err := r.ReadString('\n')
 		if err != nil {
 			return false, err
@@ -79,9 +80,9 @@ func promptDays(r *bufio.Reader, current []int) ([]int, error) {
 	for {
 		fmt.Println("  1=Mon  2=Tue  3=Wed  4=Thu  5=Fri  6=Sat  7=Sun")
 		if currentStr != "" {
-			fmt.Printf("Days (comma-separated) [%s]: ", currentStr)
+			ui.Prompt("Days (comma-separated) [%s]: ", currentStr)
 		} else {
-			fmt.Print("Days (comma-separated): ")
+			ui.Prompt("Days (comma-separated): ")
 		}
 		input, err := r.ReadString('\n')
 		if err != nil {
@@ -129,9 +130,9 @@ func parseDays(input string) ([]int, bool) {
 func promptTime(r *bufio.Reader, label, current string) (string, error) {
 	for {
 		if current != "" {
-			fmt.Printf("%s [%s]: ", label, current)
+			ui.Prompt("%s [%s]: ", label, current)
 		} else {
-			fmt.Printf("%s: ", label)
+			ui.Prompt("%s: ", label)
 		}
 		input, err := r.ReadString('\n')
 		if err != nil {

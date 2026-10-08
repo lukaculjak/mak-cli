@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -51,10 +52,10 @@ func newEditCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("\n%q updated.\n", updated.Alias)
+			ui.Success(os.Stdout, "%q updated.", updated.Alias)
 
 			if err := meetings.SyncCronJob(originalAlias, *updated); err != nil {
-				fmt.Printf("Warning: could not update cron job: %v\n", err)
+				ui.Warning(os.Stdout, "Could not update cron job: %v", err)
 			} else {
 				fmt.Println("Cron job updated.")
 			}

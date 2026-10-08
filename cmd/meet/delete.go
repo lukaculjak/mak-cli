@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -47,10 +48,10 @@ func newDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("%q removed from your meetings.\n", alias)
+			ui.Success(os.Stdout, "%q removed from your meetings.", alias)
 
 			if err := meetings.RemoveCronJob(alias); err != nil {
-				fmt.Printf("Warning: could not remove cron job: %v\n", err)
+				ui.Warning(os.Stdout, "Could not remove cron job: %v", err)
 			} else {
 				fmt.Println("Cron job removed.")
 			}

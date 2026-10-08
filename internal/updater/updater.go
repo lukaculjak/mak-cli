@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"golang.org/x/mod/semver"
 )
 
@@ -67,7 +68,8 @@ func CheckAndNotify(currentVersion string) {
 		return
 	}
 	if versionIsNewer(latest, currentVersion) {
-		fmt.Printf("\nA new version of mak is available (v%s)! Run `mak update` to upgrade.\n", latest)
+		fmt.Println()
+		ui.Warning(os.Stdout, "A new version of mak is available (v%s)! Run `mak update` to upgrade.", latest)
 	}
 }
 
@@ -80,11 +82,11 @@ func SelfUpdate(currentVersion string) error {
 	}
 
 	if currentVersion != "dev" && !versionIsNewer(latest, currentVersion) {
-		fmt.Println("mak is already up to date!")
+		ui.Success(os.Stdout, "mak is already up to date!")
 		return nil
 	}
 
-	fmt.Printf("Updating mak v%s → v%s...\n", currentVersion, latest)
+	ui.Step(os.Stdout, "Updating mak v%s → v%s...", currentVersion, latest)
 
 	tarName := fmt.Sprintf("mak_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 	baseURL := fmt.Sprintf("%s/v%s", releaseURL, latest)
@@ -143,7 +145,7 @@ func SelfUpdate(currentVersion string) error {
 		return err
 	}
 
-	fmt.Printf("mak updated to v%s\n", latest)
+	ui.Success(os.Stdout, "mak updated to v%s", latest)
 	return nil
 }
 

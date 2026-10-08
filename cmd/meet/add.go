@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -37,10 +38,10 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("\n%q added to your meetings.\n", m.Alias)
+			ui.Success(os.Stdout, "%q added to your meetings.", m.Alias)
 
 			if err := meetings.SyncCronJob(m.Alias, *m); err != nil {
-				fmt.Printf("Warning: could not create cron job: %v\n", err)
+				ui.Warning(os.Stdout, "Could not create cron job: %v", err)
 			} else {
 				fmt.Println("Cron job created, mak will open it automatically at the scheduled time.")
 			}

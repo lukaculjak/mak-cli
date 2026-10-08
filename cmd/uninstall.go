@@ -10,6 +10,7 @@ import (
 
 	"github.com/lukaculjak/mak-cli/cmd/prefill"
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +22,7 @@ func newUninstallCmd() *cobra.Command {
 		Short: "Uninstall mak from your system",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Print("Are you sure you want to uninstall mak? [y/N]: ")
+			ui.Prompt("Are you sure you want to uninstall mak? [y/N]: ")
 
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
@@ -49,7 +50,7 @@ func newUninstallCmd() *cobra.Command {
 				return fmt.Errorf("removing mak (try with sudo): %w", err)
 			}
 
-			fmt.Println("mak has been uninstalled.")
+			ui.Success(os.Stdout, "mak has been uninstalled.")
 			if purge {
 				fmt.Println("Configuration, credentials, browser manifests, and cron jobs were removed.")
 			} else {

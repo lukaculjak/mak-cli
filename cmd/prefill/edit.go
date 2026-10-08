@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +48,7 @@ func newEditCmd() *cobra.Command {
 			updated := *existing
 
 			for {
-				fmt.Print("\nChoice (1-5): ")
+				ui.Prompt("\nChoice (1-5): ")
 				line, err := r.ReadString('\n')
 				if err != nil {
 					return err
@@ -138,7 +139,7 @@ func newEditCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("\n%q updated.\n", updated.Name)
+			ui.Success(os.Stdout, "%q updated.", updated.Name)
 			return nil
 		},
 	}
@@ -146,7 +147,7 @@ func newEditCmd() *cobra.Command {
 
 func pickDomainIndex(r *bufio.Reader, count int) (int, error) {
 	for {
-		fmt.Printf("Domain number (1-%d): ", count)
+		ui.Prompt("Domain number (1-%d): ", count)
 		line, err := r.ReadString('\n')
 		if err != nil {
 			return 0, err

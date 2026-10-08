@@ -1,6 +1,6 @@
 # mak
 
-`mak` is a personal developer CLI for generating validation composables, opening
+`mak` is a personal developer CLI for installing a coding environment, generating validation composables, opening
 recurring meetings, and managing encrypted browser-login prefills.
 
 ## Install
@@ -13,7 +13,88 @@ curl -fsSL https://raw.githubusercontent.com/lukaculjak/mak-cli/main/scripts/ins
 
 Run `mak --help` to see all commands.
 
+Interactive terminal output uses orange help headings, command names, flags,
+prompts, and setup steps, with labeled success, warning, and error messages.
+Command separators make each run easier to distinguish from your shell prompt.
+True-color terminals use orange `#ff9500`; 256-color terminals use orange 208,
+with a yellow fallback for basic ANSI terminals. Ghostty settings are unchanged.
+
+Colors and terminal separators are disabled when output is redirected, when
+`TERM=dumb`, or when `NO_COLOR` is nonempty. To disable colors explicitly:
+
+```sh
+NO_COLOR=1 mak setup --help
+```
+
+Shell-completion scripts and browser native-messaging responses stay free of
+styling and command separators. The shell still controls the prompt and the
+commands you type; mak styles its own output.
+
 ## Commands
+
+### Coding environment (macOS)
+
+Close Neovim, then run as your normal user:
+
+```sh
+mak setup dev
+```
+
+`mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
+if needed, Neovim, Git, Node/npm, Go, Python, Ruby, Elixir/Erlang, GHC/Cabal/Haskell
+Language Server, ripgrep, fd, fzf, lazygit, Tree-sitter, unzip, and JetBrains Mono
+Nerd Font. Homebrew's installer may ask for your administrator password and
+install Apple's developer tools. If the C compiler is still missing, mak opens
+Apple's installation dialog and waits up to 20 minutes for you to finish it.
+Use a supported macOS/Homebrew combination and an internet connection.
+
+The command installs Luka's bundled LazyVim configuration at `~/.config/nvim`
+(or `$XDG_CONFIG_HOME/nvim`). It includes Gruvbox with hard contrast, Emmet,
+CSS/SCSS, HTML, JSON, JavaScript/TypeScript/TSX, Vue, Go, Python, Ruby, Haskell, and
+Elixir support, the existing navigation and explorer customizations, and disabled
+automatic formatting. Ruby LSP uses Mason instead of a laptop-specific rbenv
+path; HLS uses the installed toolchain instead of a hardcoded GHCup path.
+Go uses Mason's `gopls` instead of requiring `~/go/bin/gopls`, with syntax parsers
+for Go, `go.mod`, `go.work`, and `go.sum`.
+
+Setup waits for plugins, language servers, and syntax parsers to finish, checks
+every enabled LSP can initialize, and exercises Go and TypeScript completion and
+go-to-definition. Existing Neovim configuration, data, state, and cache are
+replaced automatically after an informational message; the previous directories
+are retained as adjacent `nvim.mak-backup-*` backups. Existing dotfiles symlinks
+are backed up as symlinks; their targets are left intact. XDG directory overrides
+are respected. Run no other Homebrew installations concurrently with setup.
+
+On failure or Ctrl-C, mak removes the incomplete Neovim installation, restores
+the old directories, and removes Homebrew formulae/casks introduced by the run,
+including their newly installed formula dependencies. Existing packages are not
+upgraded or uninstalled. Homebrew itself, Apple's developer tools, and package
+download caches remain shared system prerequisites. If rollback fails, the error
+identifies what still needs attention and the backup locations. An interrupted
+process that cannot run cleanup (for example, power loss or SIGKILL) may leave
+`~/.config/mak/dev-setup.lock`; inspect the backups before removing that lock and
+retrying. Keep the successful backups until you are happy with the new setup.
+
+Open a new terminal after setup. For zsh/bash, mak adds Homebrew's `shellenv`
+line to `.zprofile`/`.bash_profile` without replacing your shell settings (zsh's
+`ZDOTDIR` is respected). Select **JetBrainsMono Nerd Font** in your terminal's font
+settings, then run `nvim`. Project dependencies, Python virtual environments,
+Ruby bundles, and non-baseline GHC/HLS versions remain project-specific.
+
+The configuration and `lazy-lock.json` live under `internal/devenv/assets/nvim`
+and are embedded in the mak executable, so a separate dotfiles checkout is not
+required on the new laptop. Setup installs the plugin commits in that lockfile;
+it does not run `Lazy sync` or select the newest LazyVim automatically. See
+[lazy.nvim's lockfile documentation](https://lazy.folke.io/usage/lockfile).
+Homebrew runtimes, Mason tools, and their first-run dependencies follow their
+package registries and are not version-locked by `lazy-lock.json`.
+
+To change the environment shipped with mak, edit the bundled files, deliberately
+update and test the plugin lockfile in an isolated Neovim environment, then build
+or release mak again. `mak update` updates the executable; rerun `mak setup dev`
+to apply its bundled environment. Local Neovim edits are replaced on that rerun,
+with another backup retained. Running `:Lazy update` yourself changes your local
+plugin versions; the next mak setup restores the bundled versions.
 
 ### Validation composables
 

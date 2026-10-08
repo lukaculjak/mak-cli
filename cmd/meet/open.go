@@ -2,10 +2,12 @@ package meet
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +33,7 @@ func newOpenCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("Opening %q...\n", m.Alias)
+			ui.Step(os.Stdout, "Opening %q...", m.Alias)
 			return openURL(m.Link)
 		},
 	}

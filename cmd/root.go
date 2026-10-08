@@ -8,6 +8,7 @@ import (
 	"github.com/lukaculjak/mak-cli/cmd/meet"
 	"github.com/lukaculjak/mak-cli/cmd/prefill"
 	"github.com/lukaculjak/mak-cli/cmd/setup"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/lukaculjak/mak-cli/internal/updater"
 	"github.com/spf13/cobra"
 )
@@ -19,15 +20,26 @@ const banner = `▄▄ ▄  ▄▄  ▄ ▄     ▄▄▄ ▄   ▄▄▄
 █   █ █ █ █ █     ▀▄▄ █▄▄ ▄█▄`
 
 var rootCmd = &cobra.Command{
-	Use:   "mak",
-	Short: "MagicAtworK CLI tool",
+	Use:           "mak",
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	Short:         "MagicAtworK CLI tool",
 	Long: banner + `
 
 mak is a personal CLI tool designed for scaffolding projects, blocks of code and automating various tasks in the development workflow.`,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if humanOutput(cmd) {
+			ui.Begin(cmd.OutOrStdout(), cmd.CommandPath())
+		}
+	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+		if !humanOutput(cmd) {
+			return nil
+		}
 		if !strings.Contains(cmd.CommandPath(), "update") && !strings.Contains(cmd.CommandPath(), "upgrade") {
 			updater.CheckAndNotify(Version)
 		}
+		ui.End(cmd.OutOrStdout())
 		return nil
 	},
 }
@@ -41,13 +53,17 @@ func Execute() {
 		return
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if command, err := rootCmd.ExecuteC(); err != nil {
+		ui.Error(os.Stderr, "%v", err)
+		if command != nil && (command == rootCmd || !command.SilenceUsage) {
+			fmt.Fprintf(os.Stderr, "Run '%s --help' for usage.\n", command.CommandPath())
+		}
 		os.Exit(1)
 	}
 }
 
 func init() {
+	configureHelp(rootCmd)
 	rootCmd.Version = Version
 	rootCmd.AddCommand(setup.NewSetupCmd())
 	rootCmd.AddCommand(meet.NewMeetCmd())

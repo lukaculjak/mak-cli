@@ -8,15 +8,16 @@ import (
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"golang.org/x/term"
 )
 
 func promptString(r *bufio.Reader, label, current string) (string, error) {
 	for {
 		if current != "" {
-			fmt.Printf("%s [%s]: ", label, current)
+			ui.Prompt("%s [%s]: ", label, current)
 		} else {
-			fmt.Printf("%s: ", label)
+			ui.Prompt("%s: ", label)
 		}
 		input, err := r.ReadString('\n')
 		if err != nil {
@@ -36,9 +37,9 @@ func promptString(r *bufio.Reader, label, current string) (string, error) {
 func promptPassword(label, current string) (string, error) {
 	for {
 		if current != "" {
-			fmt.Printf("%s [leave blank to keep current]: ", label)
+			ui.Prompt("%s [leave blank to keep current]: ", label)
 		} else {
-			fmt.Printf("%s: ", label)
+			ui.Prompt("%s: ", label)
 		}
 		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
@@ -73,7 +74,7 @@ func promptURL(r *bufio.Reader, label, current string) (string, error) {
 
 func promptConfirm(r *bufio.Reader, label string) (bool, error) {
 	for {
-		fmt.Printf("%s (y/n): ", label)
+		ui.Prompt("%s (y/n): ", label)
 		input, err := r.ReadString('\n')
 		if err != nil {
 			return false, err

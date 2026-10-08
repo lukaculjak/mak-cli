@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -36,7 +37,7 @@ func requireMasterPassword() (string, error) {
 
 // setupMasterPassword guides the user through setting a master password for the first time.
 func setupMasterPassword() (string, error) {
-	fmt.Println("Welcome to mak prefill!")
+	ui.Heading(os.Stdout, "Welcome to mak prefill!")
 	fmt.Println("No store found. Let's set up a master password to protect your credentials.")
 	fmt.Println()
 
@@ -61,7 +62,7 @@ func setupMasterPassword() (string, error) {
 			return "", fmt.Errorf("failed to initialize store: %w", err)
 		}
 		fmt.Println()
-		fmt.Println("  Master password set. Store initialized.")
+		ui.Success(os.Stdout, "Master password set. Store initialized.")
 		fmt.Println()
 		return pw, nil
 	}
@@ -69,7 +70,7 @@ func setupMasterPassword() (string, error) {
 
 // promptMasterPassword reads a password from the terminal without echo.
 func promptMasterPassword(label string) (string, error) {
-	fmt.Print(label)
+	ui.Prompt("%s", label)
 	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {

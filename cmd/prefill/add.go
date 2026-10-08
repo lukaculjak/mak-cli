@@ -2,10 +2,10 @@ package prefill
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +51,7 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("\n%q saved.\n", p.Name)
+			ui.Success(os.Stdout, "%q saved.", p.Name)
 			return nil
 		},
 	}

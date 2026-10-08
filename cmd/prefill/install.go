@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +43,7 @@ func newInstallCmd() *cobra.Command {
 			if err := writeExtensionFiles(extDir); err != nil {
 				return fmt.Errorf("failed to write extension files: %w", err)
 			}
-			fmt.Printf("Extension files written to: %s\n", extDir)
+			ui.Success(os.Stdout, "Extension files written to: %s", extDir)
 			openExtensionDir(extDir)
 
 			binPath, err := resolvedBinaryPath()
@@ -58,7 +59,7 @@ func newInstallCmd() *cobra.Command {
 			}
 
 			fmt.Println()
-			fmt.Println("Next steps:")
+			ui.Heading(os.Stdout, "Next steps:")
 			fmt.Println()
 			fmt.Println("  1. Open Chrome or Brave")
 			fmt.Println("  2. Go to chrome://extensions (or brave://extensions)")
@@ -71,7 +72,7 @@ func newInstallCmd() *cobra.Command {
 			fmt.Println()
 
 			if extensionID != "" {
-				fmt.Printf("Native host manifest updated with extension ID: %s\n", extensionID)
+				ui.Success(os.Stdout, "Native host manifest updated with extension ID: %s", extensionID)
 			}
 
 			return nil
@@ -131,16 +132,16 @@ func installHostManifest(binPath string, allowedOrigins []string) error {
 		if _, err := os.Stat(filepath.Dir(dir)); os.IsNotExist(err) {
 			continue
 		} else if err != nil {
-			fmt.Printf("  Warning: could not inspect %s: %v\n", dir, err)
+			ui.Warning(os.Stdout, "Could not inspect %s: %v", dir, err)
 			continue
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			fmt.Printf("  Warning: could not create %s: %v\n", dir, err)
+			ui.Warning(os.Stdout, "Could not create %s: %v", dir, err)
 			continue
 		}
 		dest := filepath.Join(dir, hostName+".json")
 		if err := os.WriteFile(dest, data, 0644); err != nil {
-			fmt.Printf("  Warning: could not write to %s: %v\n", dest, err)
+			ui.Warning(os.Stdout, "Could not write to %s: %v", dest, err)
 			continue
 		}
 		fmt.Printf("  Installed host manifest: %s\n", dest)

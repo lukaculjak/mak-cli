@@ -2,8 +2,10 @@ package meet
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +33,7 @@ func listMeetings(list []meetings.Meeting) error {
 		fmt.Println("No meetings yet. Use `mak meet add` to create one.")
 		return nil
 	}
-	fmt.Println("All scheduled meetings:")
+	ui.Heading(os.Stdout, "All scheduled meetings:")
 	for i, m := range list {
 		fmt.Printf("  %d  %-24s %s\n", i+1, m.Alias, m.FormatSchedule())
 	}
@@ -44,7 +46,7 @@ func showMeeting(list []meetings.Meeting, alias string) error {
 		fmt.Printf("No meeting found with alias %q.\n", alias)
 		return nil
 	}
-	fmt.Printf("Meeting: %s\n", m.Alias)
+	ui.Heading(os.Stdout, "Meeting: %s", m.Alias)
 	fmt.Printf("Link:    %s\n", m.Link)
 	fmt.Printf("%s\n", m.FormatScheduleDetailed())
 	return nil

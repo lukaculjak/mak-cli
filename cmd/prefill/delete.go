@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/lukaculjak/mak-cli/internal/prefills"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +53,7 @@ func newDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("%q deleted.\n", args[0])
+			ui.Success(os.Stdout, "%q deleted.", args[0])
 			return nil
 		},
 	}

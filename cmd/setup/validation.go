@@ -1,10 +1,9 @@
 package setup
 
 import (
-	"fmt"
-
 	"github.com/lukaculjak/mak-cli/internal/detect"
 	"github.com/lukaculjak/mak-cli/internal/generator/validation"
+	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +19,7 @@ and generates the useForm + useValidationRules composables in the right location
 				return err
 			}
 
-			fmt.Printf("Detected project: %s\n\n", pt)
+			ui.Step(cmd.OutOrStdout(), "Detected project: %s\n", pt)
 
 			gen, err := validation.NewGenerator(pt)
 			if err != nil {

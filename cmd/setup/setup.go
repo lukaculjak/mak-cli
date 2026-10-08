@@ -10,6 +10,7 @@ func NewSetupCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newValidationCmd())
+	cmd.AddCommand(newDevCmd())
 
 	return cmd
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/lukaculjak/mak-cli/internal/ui"
 )
 
 type quasarGenerator struct{}
@@ -24,10 +26,11 @@ func (g *quasarGenerator) Generate(dir string) error {
 		return err
 	}
 	for _, file := range files {
-		fmt.Printf("  created  src/composables/%s\n", file.name)
+		ui.Success(os.Stdout, "Created src/composables/%s", file.name)
 	}
 
-	fmt.Println("\nQuasar validation setup complete.")
+	fmt.Println()
+	ui.Success(os.Stdout, "Quasar validation setup complete.")
 	fmt.Println("Import with: import { useForm } from 'src/composables/useForm'")
 	return nil
 }
