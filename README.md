@@ -73,7 +73,7 @@ download caches remain shared system prerequisites. If rollback fails, the error
 identifies what still needs attention and the backup locations. An interrupted
 process that cannot run cleanup (for example, power loss or SIGKILL) may leave
 `~/.config/mak/dev-setup.lock`; inspect the backups before removing that lock and
-retrying. Keep the successful backups until you are happy with the new setup.
+retrying. Keep the original backups to allow restoration with `--uninstall`.
 
 Open a new terminal after setup. For zsh/bash, mak adds Homebrew's `shellenv`
 line to `.zprofile`/`.bash_profile` without replacing your shell settings (zsh's
@@ -95,6 +95,33 @@ or release mak again. `mak update` updates the executable; rerun `mak setup dev`
 to apply its bundled environment. Local Neovim edits are replaced on that rerun,
 with another backup retained. Running `:Lazy update` yourself changes your local
 plugin versions; the next mak setup restores the bundled versions.
+
+To remove a tracked coding environment, close Neovim and run:
+
+```sh
+mak setup dev --uninstall
+```
+
+This removes the managed Neovim configuration, plugins, language servers, state,
+and cache, including local edits, then restores the files or symlinks from before
+the first tracked setup. With no previous Neovim installation, those directories
+are removed. It removes only Homebrew formulae, dependencies, and casks introduced
+by mak, keeping preexisting packages and packages now required by other installed
+tools. Homebrew, Apple's developer tools, package download caches, and intermediate
+backups from repeated setups remain. Only shell `shellenv` blocks added by tracked
+setups are removed; other shell settings and later edits are preserved.
+
+Setup saves its recovery record at `~/.local/state/mak/dev-environment.json`
+(or `$XDG_STATE_HOME/mak/dev-environment.json`). Keep this file, the adjacent
+Neovim backups, and the same XDG settings until uninstall completes. A failed
+uninstall retains its progress so the same command can resume without deleting
+already restored files. After a power loss or SIGKILL, inspect the backups and
+remove the stale `dev-setup.lock` before retrying.
+
+Installations made before recovery tracking was added cannot be automatically
+uninstalled: mak reports the missing record and leaves Neovim files and packages
+alone. Rerunning setup starts tracking from the current environment; it cannot
+recover ownership of packages introduced by an older, untracked setup.
 
 ### Validation composables
 

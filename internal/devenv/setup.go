@@ -38,6 +38,7 @@ type installer struct {
 	brew                        string
 	beforeFormulae, beforeCasks map[string]bool
 	paths                       []replacement
+	shell                       *shellChange
 }
 
 type replacement struct {
@@ -76,7 +77,7 @@ func runner(in io.Reader, out io.Writer) commandRunner {
 		var stdout, stderr bytes.Buffer
 		// Keep machine-readable stdout separate from Homebrew warnings on stderr.
 		cmd.Stdout, cmd.Stderr = io.MultiWriter(output, &stdout), io.MultiWriter(output, &stderr)
-		if filepath.Base(name) == "pgrep" || filepath.Base(name) == "xcrun" || (len(args) > 0 && (args[0] == "list" || args[0] == "--prefix")) {
+		if filepath.Base(name) == "pgrep" || filepath.Base(name) == "xcrun" || (len(args) > 0 && (args[0] == "list" || args[0] == "uses" || args[0] == "--prefix")) {
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		}
 		err := cmd.Run()
@@ -121,9 +122,9 @@ func setEnv(env []string, key, value string) []string {
 	return append(result, key+"="+value)
 }
 
-func (i *installer) setup(ctx context.Context) (err error) {
+func (i *installer) prepare(ctx context.Context) (func(), error) {
 	if app := envValue(i.env, "NVIM_APPNAME"); app != "" && app != "nvim" {
-		return fmt.Errorf("unset NVIM_APPNAME to install the default nvim environment")
+		return nil, fmt.Errorf("unset NVIM_APPNAME to manage the default nvim environment")
 	}
 	defaults := []struct{ key, path string }{
 		{"XDG_CONFIG_HOME", ".config"}, {"XDG_DATA_HOME", ".local/share"},
@@ -135,11 +136,11 @@ func (i *installer) setup(ctx context.Context) (err error) {
 			base = filepath.Join(i.home, d.path)
 		}
 		if !filepath.IsAbs(base) {
-			return fmt.Errorf("%s must be an absolute path", d.key)
+			return nil, fmt.Errorf("%s must be an absolute path", d.key)
 		}
-		base, err = resolveDirectory(filepath.Clean(base))
+		base, err := resolveDirectory(filepath.Clean(base))
 		if err != nil {
-			return fmt.Errorf("resolving %s: %w", d.key, err)
+			return nil, fmt.Errorf("resolving %s: %w", d.key, err)
 		}
 		i.env = setEnv(i.env, d.key, base)
 		i.paths = append(i.paths, replacement{path: filepath.Join(base, "nvim")})
@@ -147,20 +148,42 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	for n, p := range i.paths {
 		for _, q := range i.paths[:n] {
 			if p.path == q.path || strings.HasPrefix(p.path, q.path+string(os.PathSeparator)) || strings.HasPrefix(q.path, p.path+string(os.PathSeparator)) {
-				return fmt.Errorf("Neovim XDG directories must be separate: %s and %s", p.path, q.path)
+				return nil, fmt.Errorf("Neovim XDG directories must be separate: %s and %s", p.path, q.path)
 			}
 		}
 	}
 	lock := filepath.Join(envValue(i.env, "XDG_CONFIG_HOME"), "mak", "dev-setup.lock")
-	if err = os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		return nil, fmt.Errorf("cannot acquire setup lock %s (another setup may be running): %w", lock, err)
+	}
+	unlock := func() { os.Remove(lock) }
+	if processes, checkErr := i.run(ctx, i.env, "/usr/bin/pgrep", "-u", fmt.Sprint(os.Getuid()), "-x", "nvim"); checkErr == nil && strings.TrimSpace(processes) != "" {
+		unlock()
+		return nil, fmt.Errorf("close your running Neovim sessions before running mak setup dev")
+	}
+	return unlock, nil
+}
+
+func (i *installer) setup(ctx context.Context) (err error) {
+	unlock, err := i.prepare(ctx)
+	if err != nil {
 		return err
 	}
-	if err = os.Mkdir(lock, 0o700); err != nil {
-		return fmt.Errorf("cannot acquire setup lock %s (another setup may be running): %w", lock, err)
+	defer unlock()
+	record, err := i.readRecord()
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	defer os.Remove(lock)
-	if processes, checkErr := i.run(ctx, i.env, "/usr/bin/pgrep", "-u", fmt.Sprint(os.Getuid()), "-x", "nvim"); checkErr == nil && strings.TrimSpace(processes) != "" {
-		return fmt.Errorf("close your running Neovim sessions before running mak setup dev")
+	if record != nil {
+		if record.Uninstalling {
+			return fmt.Errorf("finish the previous uninstall with mak setup dev --uninstall before installing again")
+		}
+		if err = i.checkPaths(record); err != nil {
+			return err
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
@@ -184,6 +207,9 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites and remain after a failure.")
 	if err = i.ensureBrew(ctx); err != nil {
 		return fmt.Errorf("installing Homebrew: %w", err)
+	}
+	if record != nil && record.Brew != i.brew {
+		return fmt.Errorf("Homebrew location changed; restore %s and uninstall the previous environment first", record.Brew)
 	}
 	if err = i.ensureCompiler(ctx); err != nil {
 		return fmt.Errorf("installing Apple developer tools: %w", err)
@@ -280,6 +306,9 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	}
 	if err = i.configureShell(prefix); err != nil {
 		return fmt.Errorf("configuring shell PATH: %w", err)
+	}
+	if err = i.recordInstallation(ctx, record); err != nil {
+		return fmt.Errorf("saving installation record: %w", err)
 	}
 	ui.Success(i.out, "Coding environment ready at %s.", config)
 	fmt.Fprintln(i.out, "Open a new terminal and run nvim.")
@@ -438,6 +467,11 @@ func writeConfig(target string) error {
 
 func (i *installer) rollback(ctx context.Context) error {
 	var errs []error
+	if i.shell != nil {
+		if err := removeShellChange(*i.shell); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	for n := len(i.paths) - 1; n >= 0; n-- {
 		p := i.paths[n]
 		if !p.active && p.backup == "" {
@@ -480,7 +514,7 @@ func (i *installer) rollback(ctx context.Context) error {
 			}
 		}
 		if len(args) > 2 && !(inventory.kind == "--formula" && len(args) == 3) {
-			if _, err = i.run(ctx, i.env, i.brew, args...); err != nil {
+			if _, err = i.run(ctx, setEnv(i.env, "HOMEBREW_NO_AUTOREMOVE", "1"), i.brew, args...); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -523,11 +557,16 @@ func (i *installer) configureShell(prefix string) error {
 	if strings.Contains(string(previous), line) {
 		return nil
 	}
+	resolved, err := resolveDirectory(path)
+	if err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
-	_, writeErr := io.WriteString(f, "\n# Homebrew coding tools (mak setup dev)\n"+line+"\n")
+	block := "\n# Homebrew coding tools (mak setup dev)\n" + line + "\n"
+	_, writeErr := io.WriteString(f, block)
 	closeErr := f.Close()
 	if err = errors.Join(writeErr, closeErr); err != nil {
 		if previous == nil {
@@ -535,5 +574,6 @@ func (i *installer) configureShell(prefix string) error {
 		}
 		return errors.Join(err, os.WriteFile(path, previous, 0o644))
 	}
+	i.shell = &shellChange{Path: resolved, Block: block, Created: previous == nil}
 	return nil
 }

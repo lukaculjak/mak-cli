@@ -16,6 +16,7 @@ type fakeSystem struct {
 	formulae, casks map[string]bool
 	fail            string
 	calls           []string
+	dependents      map[string]string
 }
 
 func (f *fakeSystem) run(ctx context.Context, env []string, program string, args ...string) (string, error) {
@@ -34,6 +35,12 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 	if args[0] == "--prefix" {
 		return "/fake/brew\n", nil
 	}
+	if args[0] == "uses" {
+		if f.fail != "" && strings.Contains(call, f.fail) {
+			return "", errors.New("simulated failure: " + call)
+		}
+		return f.dependents[args[len(args)-1]], nil
+	}
 	if args[0] == "install" {
 		packages := f.formulae
 		if args[1] == "--cask" {
@@ -47,6 +54,12 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 		}
 	}
 	if args[0] == "uninstall" {
+		if envValue(env, "HOMEBREW_NO_AUTOREMOVE") != "1" {
+			return "", errors.New("uninstall must disable Homebrew's global autoremove")
+		}
+		if strings.HasPrefix(f.fail, "uninstall") && strings.Contains(call, f.fail) {
+			return "", errors.New("simulated failure: " + call)
+		}
 		packages := f.formulae
 		if args[1] == "--cask" {
 			packages = f.casks
@@ -54,6 +67,7 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 		for _, p := range args[2:] {
 			delete(packages, p)
 		}
+		return "", nil
 	}
 	if f.fail != "" && strings.Contains(call, f.fail) {
 		return "", errors.New("simulated failure: " + call)
