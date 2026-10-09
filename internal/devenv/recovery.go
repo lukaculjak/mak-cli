@@ -144,8 +144,11 @@ func (i *installer) readSetupJournal() (*setupJournal, error) {
 	if j.Record.Uninstalling || j.Record.Removing != "" {
 		return nil, fmt.Errorf("invalid setup rollback state")
 	}
-	for n, p := range j.Record.Paths {
-		if p.Path != i.paths[n].path || (p.Backup != "" && p.Backup != p.Path+".mak-backup-"+j.Record.ID) {
+	if err := i.validateManagedPaths(j.Record.Paths); err != nil {
+		return nil, err
+	}
+	for _, p := range j.Record.Paths {
+		if p.Backup != "" && p.Backup != p.Path+".mak-backup-"+j.Record.ID {
 			return nil, fmt.Errorf("setup journal paths differ; use the original XDG settings")
 		}
 	}
@@ -156,11 +159,16 @@ func (i *installer) readSetupJournal() (*setupJournal, error) {
 		if j.Commit.Brew != j.Record.Brew || j.Commit.Removing != "" || j.Commit.Uninstalling {
 			return nil, fmt.Errorf("invalid setup commit")
 		}
-		if len(j.Record.Paths) != 0 && len(j.Commit.Paths) != 4 {
-			return nil, fmt.Errorf("committed Neovim paths are missing")
+		if err := i.validateManagedPaths(j.Commit.Paths); err != nil {
+			return nil, err
 		}
-		for n, p := range j.Commit.Paths {
-			if p.Path != i.paths[n].path || (p.Backup != "" && (filepath.Dir(p.Backup) != filepath.Dir(p.Path) || !strings.HasPrefix(filepath.Base(p.Backup), "nvim.mak-backup-"))) {
+		for _, p := range j.Record.Paths {
+			if !slices.ContainsFunc(j.Commit.Paths, func(committed installedPath) bool { return committed.Path == p.Path }) {
+				return nil, fmt.Errorf("committed configuration paths are missing")
+			}
+		}
+		for _, p := range j.Commit.Paths {
+			if p.Backup != "" && (filepath.Dir(p.Backup) != filepath.Dir(p.Path) || !strings.HasPrefix(p.Backup, p.Path+".mak-backup-")) {
 				return nil, fmt.Errorf("invalid committed setup paths")
 			}
 		}
@@ -169,6 +177,13 @@ func (i *installer) readSetupJournal() (*setupJournal, error) {
 }
 
 func (i *installer) beginSetupJournal(neovim bool) error {
+	if neovim {
+		return i.beginSetupJournalPaths(i.paths)
+	}
+	return i.beginSetupJournalPaths(nil)
+}
+
+func (i *installer) beginSetupJournalPaths(paths []replacement) error {
 	r, err := i.newRecord()
 	if err != nil {
 		return err
@@ -181,24 +196,22 @@ func (i *installer) beginSetupJournal(neovim bool) error {
 	}
 	slices.Sort(r.Formulae)
 	slices.Sort(r.Casks)
-	if neovim {
-		for _, p := range i.paths {
-			item := installedPath{Path: p.path}
-			if _, err := os.Lstat(p.path); err == nil {
-				item.Backup = p.path + ".mak-backup-" + r.ID
-			} else if !os.IsNotExist(err) {
-				return err
-			}
-			for _, reserved := range []string{item.Backup, discardPath(item, r.ID)} {
-				if reserved == "" {
-					continue
-				}
-				if _, err := os.Lstat(reserved); !os.IsNotExist(err) {
-					return fmt.Errorf("reserved recovery path %s already exists or is unreadable", reserved)
-				}
-			}
-			r.Paths = append(r.Paths, item)
+	for _, p := range paths {
+		item := installedPath{Path: p.path}
+		if _, err := os.Lstat(p.path); err == nil {
+			item.Backup = p.path + ".mak-backup-" + r.ID
+		} else if !os.IsNotExist(err) {
+			return err
 		}
+		for _, reserved := range []string{item.Backup, discardPath(item, r.ID)} {
+			if reserved == "" {
+				continue
+			}
+			if _, err := os.Lstat(reserved); !os.IsNotExist(err) {
+				return fmt.Errorf("reserved recovery path %s already exists or is unreadable", reserved)
+			}
+		}
+		r.Paths = append(r.Paths, item)
 	}
 	i.journal = &setupJournal{Record: *r}
 	if err := i.saveSetupJournal(); err != nil {

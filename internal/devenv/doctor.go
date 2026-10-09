@@ -130,6 +130,15 @@ func (i *installer) doctor(ctx context.Context) error {
 		} else {
 			r.add("warning", "Nerd Font", "JetBrains Mono Nerd Font is not installed via Homebrew", "mak setup dev --install font")
 		}
+		if installedCasks != nil {
+			for _, pkg := range []string{"ghostty", ghosttyFont} {
+				if installedCasks[pkg] {
+					r.add("ok", "Homebrew: "+pkg, "Installed", "")
+				} else {
+					r.add("warning", "Homebrew: "+pkg, "Not installed via Homebrew", "mak setup dev --install "+pkg)
+				}
+			}
+		}
 	} else {
 		r.add("error", "Homebrew", "Not found", "mak setup dev")
 	}
@@ -182,6 +191,15 @@ func (i *installer) doctor(ctx context.Context) error {
 		r.add("warning", "Bundled Neovim files", "Local edits in "+strings.Join(changed, ", "), "To restore bundled defaults: mak setup dev (backs up local edits)")
 	} else {
 		r.add("ok", "Bundled Neovim files", "Match this mak version", "")
+	}
+	bundledGhostty, _ := assets.ReadFile("assets/ghostty/config")
+	ghosttyConfig := filepath.Join(i.paths[5].path, "config")
+	if contents, err := os.ReadFile(ghosttyConfig); err != nil {
+		r.add("warning", "Bundled Ghostty file", "Missing or unreadable at "+ghosttyConfig, "mak setup dev --install ghostty")
+	} else if !bytes.Equal(contents, bundledGhostty) {
+		r.add("warning", "Bundled Ghostty file", "Local edits in "+ghosttyConfig, "To restore bundled defaults: mak setup dev --install ghostty (backs up local edits)")
+	} else {
+		r.add("ok", "Bundled Ghostty file", "Matches this mak version", "")
 	}
 	lock := filepath.Join(envValue(i.env, "XDG_CONFIG_HOME"), "mak", "dev-setup.lock")
 	pending := false

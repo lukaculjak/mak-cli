@@ -46,7 +46,7 @@ func TestListPackagesShowsInstalledAndOwnershipWithoutWriting(t *testing.T) {
 	if err := i.listPackages(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"[x] git", "[x] python", "[ ] neovim", "[ ] node", "(python@3.14)", "not tracked by mak"} {
+	for _, line := range []string{"[x] git", "[x] python", "[ ] neovim", "[ ] node", "[ ] ghostty", "[ ] " + ghosttyFont, "(python@3.14)", "not tracked by mak"} {
 		if !strings.Contains(out.String(), line) {
 			t.Fatalf("missing %s in %s", line, out.String())
 		}
@@ -161,7 +161,7 @@ func TestNeovimSelectionInstallsFullEnvironmentAndRemovalRestoresOnlyNeovim(t *t
 		t.Fatal("Neovim removal affected other tools")
 	}
 	r := mustRecord(t, i)
-	if len(r.Paths) != 0 || r.Removing != "" || slices.Contains(r.Formulae, "neovim") {
+	if len(r.Paths) != 2 || r.Removing != "" || slices.Contains(r.Formulae, "neovim") {
 		t.Fatalf("record not updated: %+v", r)
 	}
 	if err := nextInvocation(i, f).uninstall(context.Background()); err != nil {

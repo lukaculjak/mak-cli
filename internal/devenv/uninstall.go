@@ -76,7 +76,7 @@ func (i *installer) readRecord() (*installationRecord, error) {
 
 func validateRecord(r *installationRecord) error {
 	id, err := hex.DecodeString(r.ID)
-	if r.Version != 1 || err != nil || len(id) != 16 || !filepath.IsAbs(r.Brew) || (len(r.Paths) != 0 && len(r.Paths) != 4) {
+	if r.Version != 1 || err != nil || len(id) != 16 || !filepath.IsAbs(r.Brew) || (len(r.Paths) != 0 && len(r.Paths) != 2 && len(r.Paths) != 4 && len(r.Paths) != 6) {
 		return fmt.Errorf("invalid or unsupported installation record; files left untouched")
 	}
 	if r.Removing != "" {
@@ -149,8 +149,15 @@ func (i *installer) recordInstallation(ctx context.Context, r *installationRecor
 			return err
 		}
 	}
-	if len(r.Paths) == 0 {
-		for _, p := range i.paths {
+	paths := i.paths
+	if i.journal != nil {
+		paths = nil
+		for _, p := range i.journal.Record.Paths {
+			paths = append(paths, replacement{path: p.Path, backup: p.Backup})
+		}
+	}
+	for _, p := range paths {
+		if !slices.ContainsFunc(r.Paths, func(old installedPath) bool { return old.Path == p.path }) {
 			r.Paths = append(r.Paths, installedPath{Path: p.path, Backup: p.backup})
 		}
 	}
@@ -222,12 +229,12 @@ func ownedDirectory(path, id string) bool {
 // Validate every resource before changing any of them. A missing marker means
 // the user replaced the directory, so it is no longer ours to delete.
 func (i *installer) checkPaths(r *installationRecord) error {
+	if err := i.validateManagedPaths(r.Paths); err != nil {
+		return err
+	}
 	for n := range r.Paths {
 		p := &r.Paths[n]
-		if p.Path != i.paths[n].path {
-			return fmt.Errorf("XDG directories differ from the installation record; use the same XDG settings as setup")
-		}
-		if p.Backup != "" && (filepath.Dir(p.Backup) != filepath.Dir(p.Path) || !strings.HasPrefix(filepath.Base(p.Backup), "nvim.mak-backup-")) {
+		if p.Backup != "" && (filepath.Dir(p.Backup) != filepath.Dir(p.Path) || !strings.HasPrefix(p.Backup, p.Path+".mak-backup-")) {
 			return fmt.Errorf("invalid backup path %s; files left untouched", p.Backup)
 		}
 		if p.Done {
@@ -293,7 +300,7 @@ func (i *installer) uninstall(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(r.Paths) != 0 {
+	if slices.ContainsFunc(r.Paths, func(p installedPath) bool { return i.pathPackage(p.Path) == "neovim" }) {
 		if err := i.checkNeovim(ctx); err != nil {
 			return err
 		}
@@ -316,7 +323,7 @@ func (i *installer) uninstall(ctx context.Context) error {
 		return err
 	}
 	if len(r.Paths) != 0 {
-		ui.Warning(i.out, "Removing mak's Neovim environment, including local edits, plugins and language servers; restoring original backups.")
+		ui.Warning(i.out, "Removing mak's managed Neovim and Ghostty files, including local edits; restoring original backups.")
 	} else {
 		ui.Step(i.out, "Removing the remaining tracked coding packages.")
 	}
@@ -345,14 +352,21 @@ func (i *installer) uninstall(ctx context.Context) error {
 	if err := os.Remove(i.recordPath()); err != nil {
 		return err
 	}
-	ui.Success(i.out, "Coding environment removed; previous Neovim files restored where backups existed.")
+	ui.Success(i.out, "Coding environment removed; previous Neovim and Ghostty files restored where backups existed.")
 	fmt.Fprintln(i.out, "Homebrew, Apple developer tools, download caches and shared packages remain. Open a new terminal to refresh your PATH.")
 	return nil
 }
 
 func (i *installer) restorePaths(ctx context.Context, r *installationRecord, checkpoint func(*installationRecord) error) error {
+	return i.restorePackagePaths(ctx, r, checkpoint, "")
+}
+
+func (i *installer) restorePackagePaths(ctx context.Context, r *installationRecord, checkpoint func(*installationRecord) error, pkg string) error {
 	for n := len(r.Paths) - 1; n >= 0; n-- {
 		p := &r.Paths[n]
+		if pkg != "" && i.pathPackage(p.Path) != pkg {
+			continue
+		}
 		if p.Done {
 			continue
 		}

@@ -19,7 +19,7 @@ Interactive terminal output uses orange help headings, command names, flags,
 prompts, and setup steps, with labeled success, warning, and error messages.
 Command separators make each run easier to distinguish from your shell prompt.
 True-color terminals use orange `#ff9500`; 256-color terminals use orange 208,
-with a yellow fallback for basic ANSI terminals. Ghostty settings are unchanged.
+with a yellow fallback for basic ANSI terminals. These output styles do not change terminal settings.
 
 Colors and terminal separators are disabled when output is redirected, when
 `TERM=dumb`, or when `NO_COLOR` is nonempty. To disable colors explicitly:
@@ -55,7 +55,7 @@ Redirected output, `TERM=dumb`, and `NO_COLOR` use plain stage lines without ani
 `mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
 if needed, Neovim, Git, Node/npm, Go, Python, Ruby, Elixir/Erlang, GHC/Cabal/Haskell
 Language Server, ripgrep, fd, fzf, lazygit, Tree-sitter library/CLI, unzip, and
-JetBrains Mono Nerd Font. Homebrew's installer may ask for your administrator password and
+JetBrains Mono Nerd Font, Ghostty, and Meslo LG Nerd Font. Homebrew's installer may ask for your administrator password and
 install Apple's developer tools. If the C compiler is still missing, mak opens
 Apple's installation dialog and waits up to 20 minutes for you to finish it.
 Use a supported macOS/Homebrew combination and an internet connection.
@@ -72,6 +72,18 @@ path; HLS uses the installed toolchain instead of a hardcoded GHCup path.
 Go uses Mason's `gopls` instead of requiring `~/go/bin/gopls`, with syntax parsers
 for Go, `go.mod`, `go.work`, and `go.sum`.
 
+Setup also bundles Luka's Ghostty settings: niji theme, 88% background opacity,
+Display P3, native title bar, 160×62 window, 10-pixel padding, size-16 Meslo font,
+shell integration, split navigation, close-surface bindings, and Shift+Enter input.
+`MesloLGS NF` remains the preferred font, with Homebrew's `MesloLGS Nerd Font`
+as a fallback for a fresh machine. The settings are written to
+`~/Library/Application Support/com.mitchellh.ghostty/config`. Both that directory
+and `$XDG_CONFIG_HOME/ghostty` (default `~/.config/ghostty`) are backed up and
+replaced; the XDG directory contains a comment pointing to the macOS config.
+This avoids old settings overriding or duplicating the bundled configuration.
+Ghostty backups are adjacent `*.mak-backup-*` directories, including any existing
+`config.ghostty` files. Open a new Ghostty window after setup.
+
 Setup waits for plugins, language servers, and syntax parsers to finish, checks
 every enabled LSP can initialize, and exercises Go and TypeScript completion and
 go-to-definition. Existing Neovim configuration, data, state, and cache are
@@ -80,7 +92,7 @@ are retained as adjacent `nvim.mak-backup-*` backups. Existing dotfiles symlinks
 are backed up as symlinks; their targets are left intact. XDG directory overrides
 are respected. Run no other Homebrew installations concurrently with setup.
 
-On failure or Ctrl-C, mak removes the incomplete Neovim installation, restores
+On failure or Ctrl-C, mak removes the incomplete Neovim and Ghostty configuration, restores
 the old directories, and removes Homebrew formulae/casks introduced by the run,
 including their newly installed formula dependencies. Existing packages are not
 upgraded or uninstalled. Homebrew itself, Apple's developer tools, and package
@@ -124,7 +136,8 @@ directories. It does not install software, edit profiles, or reload unrelated
 shell settings. Other shells need their own Homebrew PATH setup. You can still
 reload your full profile with `source "${ZDOTDIR:-$HOME}/.zprofile"` (zsh) or
 `source "$HOME/.bash_profile"` (bash).
-Select **JetBrainsMono Nerd Font** in your terminal's font
+Ghostty uses the bundled Meslo font selection automatically. For other terminals,
+select **JetBrainsMono Nerd Font** in your terminal's font
 settings, then run `nvim`. Project dependencies, Python virtual environments,
 Ruby bundles, and non-baseline GHC/HLS versions remain project-specific.
 
@@ -139,7 +152,7 @@ package registries and are not version-locked by `lazy-lock.json`.
 To change the environment shipped with mak, edit the bundled files, deliberately
 update and test the plugin lockfile in an isolated Neovim environment, then build
 or release mak again. `mak update` updates the executable; rerun `mak setup dev`
-to apply its bundled environment. Local Neovim edits are replaced on that rerun,
+to apply its bundled environment. Local Neovim and Ghostty edits are replaced on that rerun,
 with another backup retained. Running `:Lazy update` yourself changes your local
 plugin versions; the next mak setup restores the bundled versions.
 
@@ -166,22 +179,27 @@ mak setup dev --remove node   # or -r node
 mak setup dev -i nvim         # full LazyVim environment, with confirmation
 mak setup dev -r nvim         # Neovim only, restoring its original files
 mak setup dev -i font         # JetBrains Mono Nerd Font
+mak setup dev -i ghostty      # Ghostty + bundled settings + Meslo font (with confirmation)
+mak setup dev -r ghostty      # Ghostty only, restoring its original settings
 mak setup dev -i tree-sitter-cli # Tree-sitter executable for syntax parsers
 ```
 
 `nvim` is an alias for `neovim`, and `font` is an alias for
 `font-jetbrains-mono-nerd-font`. Installing Neovim runs the complete environment
 setup, including the bundled configuration, language runtimes, plugins, LSPs,
-and parsers. Other individual installs add only the selected Homebrew package
-and its dependencies, retaining ownership for later cleanup. Already installed
-packages are left as is and are not newly claimed by mak.
+and parsers. Installing Ghostty adds the application, Meslo LG Nerd Font, and
+the bundled settings, with the same confirmation and backup handling as full
+setup. Other individual installs add only the selected Homebrew package and its
+dependencies, retaining ownership for later cleanup. Already installed packages
+are not newly claimed by mak; Ghostty's settings are still applied and backed up.
 
 Single-package removal refuses untracked packages and packages required by other
 installed Homebrew software. It keeps the selected package's dependencies and
 all other coding tools; `--uninstall` can clean up the remaining tracked packages.
 Removing a tracked Neovim also removes its managed files, including local edits,
-and restores the original backups. Removing other packages leaves Neovim files
-alone; removing a runtime can disable language servers that need it. Failed
+and restores the original backups. Removing Ghostty restores its original
+configuration while retaining Neovim files. Removing other packages leaves
+Neovim and Ghostty files alone; removing a runtime can disable language servers that need it. Failed
 removals retain progress so the same `--remove PACKAGE` command can resume.
 The list, install, remove, and full-uninstall flags are mutually exclusive.
 
@@ -213,10 +231,10 @@ To remove a tracked coding environment, close Neovim and run:
 mak setup dev --uninstall
 ```
 
-This removes the managed Neovim configuration, plugins, language servers, state,
-and cache, including local edits, then restores the files or symlinks from before
-the first tracked setup. With no previous Neovim installation, those directories
-are removed. It removes only Homebrew formulae, dependencies, and casks introduced
+This removes the managed Ghostty configuration and Neovim configuration,
+plugins, language servers, state, and cache, including local edits, then restores
+the files or symlinks from before the first tracked setup. With no previous
+installation, managed directories are removed. It removes only Homebrew formulae, dependencies, and casks introduced
 by mak, keeping preexisting packages and packages now required by other installed
 tools. Homebrew, Apple's developer tools, package download caches, and intermediate
 backups from repeated setups remain. Only shell `shellenv` blocks added by tracked
@@ -224,7 +242,7 @@ setups are removed; other shell settings and later edits are preserved.
 
 Setup saves its recovery record at `~/.local/state/mak/dev-environment.json`
 (or `$XDG_STATE_HOME/mak/dev-environment.json`). Keep this file, the adjacent
-Neovim backups, and the same XDG settings until uninstall completes. A failed
+Neovim and Ghostty backups, and the same HOME/XDG settings until uninstall completes. A failed
 uninstall retains its progress so the same command can resume without deleting
 already restored files. After power loss or SIGKILL, rerun the same command;
 the process lock releases automatically and removal resumes from its checkpoints.

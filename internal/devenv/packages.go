@@ -36,7 +36,11 @@ func packageCatalog() []packageSpec {
 	for _, name := range formulae {
 		result = append(result, packageSpec{name: name, description: descriptions[name]})
 	}
-	return append(result, packageSpec{name: font, description: "JetBrains Mono Nerd Font (alias: font)", cask: true})
+	return append(result,
+		packageSpec{name: font, description: "JetBrains Mono Nerd Font (alias: font)", cask: true},
+		packageSpec{name: "ghostty", description: "Ghostty terminal + Luka's bundled configuration", cask: true},
+		packageSpec{name: ghosttyFont, description: "Meslo LG Nerd Font (Ghostty fallback)", cask: true},
+	)
 }
 
 // PackageName validates a catalog entry and resolves its supported aliases.
@@ -77,7 +81,10 @@ func (i *installer) catalogNames(ctx context.Context) (map[string]string, error)
 	if err := json.Unmarshal([]byte(b), &info); err != nil {
 		return nil, fmt.Errorf("reading Homebrew package names: %w", err)
 	}
-	names := map[string]string{font: font}
+	names := map[string]string{}
+	for _, name := range casks {
+		names[name] = name
+	}
 	for _, name := range formulae {
 		for _, f := range info.Formulae {
 			if f.Name == name || slices.Contains(f.Aliases, name) || slices.Contains(f.OldNames, name) {
@@ -166,7 +173,7 @@ func (i *installer) listPackages(ctx context.Context) error {
 		ui.Check(i.out, installed, "%-34s %s%s", p.name, p.description, status)
 	}
 	fmt.Fprintln(i.out, "\nNeovim's checkbox shows the application, not whether the full LazyVim setup is complete.")
-	fmt.Fprintln(i.out, "--install neovim (or nvim) installs the full environment. Other names install only that package and its dependencies.")
+	fmt.Fprintln(i.out, "--install neovim (or nvim) installs the full environment. Ghostty includes its configuration and Meslo font; other names install only that package and its dependencies.")
 	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites. Software installed outside Homebrew is not detected.")
 	return nil
 }
@@ -203,6 +210,11 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	if err := checkPendingRemoval(r, ""); err != nil {
 		return err
 	}
+	if p.name == "ghostty" && r != nil {
+		if err := i.checkPaths(r); err != nil {
+			return err
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 	defer func() {
@@ -238,18 +250,26 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	if p.cask {
 		before, kind = i.beforeCasks, "--cask"
 	}
-	if before[name] {
+	if before[name] && p.name != "ghostty" {
 		ui.Success(i.out, "%s is already installed; leaving it as is.", p.name)
 		return nil
 	}
 	if err := i.ensureCompiler(ctx); err != nil {
 		return err
 	}
-	if err := i.beginSetupJournal(false); err != nil {
+	var paths []replacement
+	if p.name == "ghostty" {
+		paths = i.paths[4:]
+	}
+	if err := i.beginSetupJournalPaths(paths); err != nil {
 		return err
 	}
 	ui.Step(i.out, "Installing %s and its dependencies...", p.name)
-	if _, err := i.run(ctx, i.env, i.brew, "install", kind, name); err != nil {
+	args := []string{"install", kind, name}
+	if p.name == "ghostty" {
+		args = append(args, ghosttyFont)
+	}
+	if _, err := i.run(ctx, i.env, i.brew, args...); err != nil {
 		return fmt.Errorf("installing %s: %w", p.name, err)
 	}
 	installed, err := i.inventory(ctx, kind)
@@ -258,6 +278,16 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	}
 	if !installed[name] {
 		return fmt.Errorf("Homebrew did not install %s", name)
+	}
+	if p.name == "ghostty" {
+		for n := 4; n < len(i.paths); n++ {
+			if err := i.replace(&i.paths[n]); err != nil {
+				return err
+			}
+		}
+		if err := i.writeGhosttyConfig(); err != nil {
+			return err
+		}
 	}
 	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
 	if err != nil {
@@ -276,7 +306,7 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 			return err
 		}
 	}
-	if err := i.recordPackages(ctx, r); err != nil {
+	if err := i.recordInstallation(ctx, r); err != nil {
 		return fmt.Errorf("saving package ownership: %w", err)
 	}
 	ui.Success(i.out, "%s installed. Open a new terminal to refresh your PATH.", p.name)
@@ -343,9 +373,10 @@ func (i *installer) removePackage(ctx context.Context, p packageSpec) error {
 		}
 		name = names[p.name]
 	}
+	hasPaths := slices.ContainsFunc(r.Paths, func(path installedPath) bool { return i.pathPackage(path.Path) == p.name })
 	if !slices.Contains(*owned, name) {
-		if p.name == "neovim" && len(r.Paths) != 0 {
-			return fmt.Errorf("Neovim was already installed before mak; use mak setup dev --uninstall to restore its files while preserving the application")
+		if hasPaths {
+			return fmt.Errorf("%s was already installed before mak; use mak setup dev --uninstall to restore its files while preserving the application", p.name)
 		}
 		return fmt.Errorf("%s is not tracked by mak; existing software is preserved", p.name)
 	}
@@ -364,9 +395,11 @@ func (i *installer) removePackage(ctx context.Context, p packageSpec) error {
 			return fmt.Errorf("keeping %s: required by %s; remove those packages first", p.name, strings.Join(names, ", "))
 		}
 	}
-	if p.name == "neovim" && len(r.Paths) != 0 {
-		if err := i.checkNeovim(ctx); err != nil {
-			return err
+	if hasPaths {
+		if p.name == "neovim" {
+			if err := i.checkNeovim(ctx); err != nil {
+				return err
+			}
 		}
 		if err := i.checkPaths(r); err != nil {
 			return err
@@ -376,12 +409,12 @@ func (i *installer) removePackage(ctx context.Context, p packageSpec) error {
 	if err := i.saveRecord(r); err != nil {
 		return err
 	}
-	if p.name == "neovim" && len(r.Paths) != 0 {
-		ui.Warning(i.out, "Removing the managed Neovim files, including local edits, plugins and language servers; restoring original backups.")
-		if err := i.restorePaths(ctx, r, i.saveRecord); err != nil {
+	if hasPaths {
+		ui.Warning(i.out, "Removing the managed %s files, including local edits; restoring original backups.", p.name)
+		if err := i.restorePackagePaths(ctx, r, i.saveRecord, p.name); err != nil {
 			return fmt.Errorf("%w; retry mak setup dev --remove %s", err, p.name)
 		}
-		r.Paths = nil
+		r.Paths = slices.DeleteFunc(r.Paths, func(path installedPath) bool { return i.pathPackage(path.Path) == p.name })
 		if err := i.saveRecord(r); err != nil {
 			return err
 		}

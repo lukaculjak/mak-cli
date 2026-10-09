@@ -27,6 +27,9 @@ var assets embed.FS
 var formulae = []string{"neovim", "git", "node", "go", "python", "ruby", "elixir", "ghc", "cabal-install", "haskell-language-server", "ripgrep", "fd", "fzf", "lazygit", "tree-sitter", "tree-sitter-cli", "unzip"}
 
 const font = "font-jetbrains-mono-nerd-font"
+const ghosttyFont = "font-meslo-lg-nerd-font"
+
+var casks = []string{font, "ghostty", ghosttyFont}
 
 type commandRunner func(context.Context, []string, string, ...string) (string, error)
 
@@ -49,7 +52,7 @@ type replacement struct {
 	path, backup string
 }
 
-// Setup installs the bundled environment, retaining existing Neovim files as backups.
+// Setup installs the bundled environment, retaining existing configuration as backups.
 func Setup(ctx context.Context, in io.Reader, out io.Writer) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("mak setup dev currently supports macOS only")
@@ -159,10 +162,18 @@ func (i *installer) resolvePaths() error {
 		i.env = setEnv(i.env, d.key, base)
 		i.paths = append(i.paths, replacement{path: filepath.Join(base, "nvim")})
 	}
+	ghosttyBase, err := resolveDirectory(filepath.Join(i.home, "Library/Application Support"))
+	if err != nil {
+		return fmt.Errorf("resolving Ghostty configuration: %w", err)
+	}
+	i.paths = append(i.paths,
+		replacement{path: filepath.Join(envValue(i.env, "XDG_CONFIG_HOME"), "ghostty")},
+		replacement{path: filepath.Join(ghosttyBase, "com.mitchellh.ghostty")},
+	)
 	for n, p := range i.paths {
 		for _, q := range i.paths[:n] {
 			if p.path == q.path || strings.HasPrefix(p.path, q.path+string(os.PathSeparator)) || strings.HasPrefix(q.path, p.path+string(os.PathSeparator)) {
-				return fmt.Errorf("Neovim XDG directories must be separate: %s and %s", p.path, q.path)
+				return fmt.Errorf("development configuration directories must be separate: %s and %s", p.path, q.path)
 			}
 		}
 	}
@@ -251,12 +262,12 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		} else if committing {
 			err = fmt.Errorf("%w; verified environment and installation record recovered. Run mak doctor", err)
 		} else {
-			err = fmt.Errorf("%w; previous Neovim environment restored. Fix the reported problem and retry mak setup dev", err)
+			err = fmt.Errorf("%w; previous Neovim and Ghostty files restored. Fix the reported problem and retry mak setup dev", err)
 		}
 	}()
 
 	ui.Step(i.out, "Installing Luka's coding environment.")
-	ui.Warning(i.out, "Existing Neovim files will be replaced with backups retained.")
+	ui.Warning(i.out, "Existing Neovim and Ghostty files will be replaced with backups retained.")
 	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites and remain after a failure.")
 	i.stage(1, "Checking Homebrew and Apple developer tools...")
 	if err = i.ensureBrew(ctx); err != nil {
@@ -280,12 +291,12 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if err = i.beginSetupJournal(true); err != nil {
 		return err
 	}
-	i.stage(2, "Installing coding tools and Nerd Font...")
+	i.stage(2, "Installing coding tools, Ghostty and Nerd Fonts...")
 	if _, err = i.run(ctx, i.env, i.brew, append([]string{"install", "--formula"}, formulae...)...); err != nil {
 		return fmt.Errorf("installing coding tools: %w", err)
 	}
-	if _, err = i.run(ctx, i.env, i.brew, "install", "--cask", font); err != nil {
-		return fmt.Errorf("installing Nerd Font: %w", err)
+	if _, err = i.run(ctx, i.env, i.brew, append([]string{"install", "--cask"}, casks...)...); err != nil {
+		return fmt.Errorf("installing Ghostty and Nerd Fonts: %w", err)
 	}
 	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
 	if err != nil {
@@ -296,7 +307,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
 	}
 	i.env = setEnv(i.env, "PATH", strings.Join([]string{filepath.Join(prefix, "opt/ruby/bin"), filepath.Join(prefix, "opt/python/libexec/bin"), filepath.Join(prefix, "bin"), filepath.Join(prefix, "sbin"), envValue(i.env, "PATH")}, string(os.PathListSeparator)))
-	i.stage(3, "Backing up Neovim and preparing LazyVim...")
+	i.stage(3, "Backing up Neovim and Ghostty and preparing configurations...")
 	// Homebrew's tree-sitter formula supplies only the library. Require the CLI
 	// before LazyVim can attempt competing Mason installs during plugin startup.
 	ui.Step(i.out, "Checking Tree-sitter CLI...")
@@ -305,12 +316,15 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	}
 	for n := range i.paths {
 		if err = i.replace(&i.paths[n]); err != nil {
-			return fmt.Errorf("backing up Neovim: %w", err)
+			return fmt.Errorf("backing up development configuration: %w", err)
 		}
 	}
 	config, data := i.paths[0].path, i.paths[1].path
 	if err = writeConfig(config); err != nil {
 		return fmt.Errorf("writing bundled configuration: %w", err)
+	}
+	if err = i.writeGhosttyConfig(); err != nil {
+		return err
 	}
 	if err = os.WriteFile(filepath.Join(config, "mak-brew-prefix"), []byte(prefix+"\n"), 0o644); err != nil {
 		return err
@@ -386,7 +400,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	ui.Success(i.out, "Coding environment ready at %s.", config)
 	fmt.Fprintln(i.out, "Open a new terminal, or refresh this zsh/bash session with: eval \"$(mak shellenv)\"")
 	fmt.Fprintln(i.out, "Then run nvim.")
-	fmt.Fprintln(i.out, "Select JetBrainsMono Nerd Font in your terminal's font settings.")
+	fmt.Fprintln(i.out, "Ghostty is configured with Luka's settings. Open a new Ghostty window to use them.")
 	for _, p := range i.paths {
 		if p.backup != "" {
 			fmt.Fprintf(i.out, "Previous files saved at %s\n", p.backup)

@@ -22,15 +22,26 @@ for mak_smoke_kind in config share state cache; do
   mkdir -p "$mak_smoke_root/$mak_smoke_kind/nvim"
   printf 'Original %s\n' "$mak_smoke_kind" > "$mak_smoke_root/$mak_smoke_kind/nvim/original"
 done
+mak_smoke_ghostty_macos="$mak_smoke_home/Library/Application Support/com.mitchellh.ghostty"
+for mak_smoke_ghostty_dir in "$mak_smoke_root/config/ghostty" "$mak_smoke_ghostty_macos"; do
+  mkdir -p "$mak_smoke_ghostty_dir"
+  printf 'theme = original\n' > "$mak_smoke_ghostty_dir/config.ghostty"
+done
 
 "${mak_smoke_cli[@]}" setup dev --yes
 eval "$("${mak_smoke_cli[@]}" shellenv)"
+cmp internal/devenv/assets/ghostty/config "$mak_smoke_ghostty_macos/config"
+/Applications/Ghostty.app/Contents/MacOS/ghostty +validate-config --config-file="$mak_smoke_ghostty_macos/config"
 "${mak_smoke_cli[@]}" doctor
 "${mak_smoke_cli[@]}" setup dev --uninstall
 
 for mak_smoke_kind in config share state cache; do
   test "$(cat "$mak_smoke_root/$mak_smoke_kind/nvim/original")" = "Original $mak_smoke_kind"
   test "$(ls -A "$mak_smoke_root/$mak_smoke_kind/nvim" | wc -l | tr -d ' ')" = 1
+done
+for mak_smoke_ghostty_dir in "$mak_smoke_root/config/ghostty" "$mak_smoke_ghostty_macos"; do
+  test "$(cat "$mak_smoke_ghostty_dir/config.ghostty")" = 'theme = original'
+  test "$(ls -A "$mak_smoke_ghostty_dir" | wc -l | tr -d ' ')" = 1
 done
 test ! -e "$mak_smoke_root/state/mak/dev-environment.json"
 test ! -e "$mak_smoke_root/state/mak/dev-setup-journal.json"

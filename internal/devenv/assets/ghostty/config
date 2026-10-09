@@ -1,0 +1,55 @@
+# --- Ghostty Configuration 1.2.3 ---
+
+# Theme & Appearance
+theme = niji
+background-opacity = 0.88
+window-colorspace = display-p3
+macos-titlebar-style = native
+# Optional: makes the padding look uniform on all sides
+window-padding-balance = true 
+
+# Window Geometry
+window-width = 160
+window-height = 62
+window-padding-x = 10
+window-padding-y = 10
+resize-overlay = never
+window-save-state = always
+
+# Font
+font-family = "MesloLGS NF"
+# Homebrew's Meslo family is the fallback on a fresh machine.
+font-family = "MesloLGS Nerd Font"
+font-size = 16
+
+# Mouse & Interaction
+mouse-hide-while-typing = true
+mouse-scroll-multiplier = 2
+confirm-close-surface = false
+
+# Shell Integration
+# Disables cursor/title control but keeps other features like prompt marking
+shell-integration-features = no-cursor,sudo,no-title
+
+# --- Keybindings ---
+
+# FIX: Closing the terminal/split
+# 'super+d' is Cmd+D on Mac. 'ctrl+d' is the standard exit.
+keybind = super+d=close_surface
+keybind = ctrl+d=close_surface
+# Unbind default Cmd+D if it's conflicting (Ghostty sometimes binds it to new_split)
+keybind = super+d=unbind
+keybind = super+d=close_surface
+
+# Navigation & Splits
+keybind = super+shift+k=new_split:right
+keybind = super+shift+o=new_split:down
+
+keybind = alt+right=goto_split:right
+keybind = alt+left=goto_split:left
+keybind = alt+up=goto_split:top
+keybind = alt+down=goto_split:bottom
+
+# Custom Text Inputs
+# Fixes potential newline issues in some shells
+keybind = shift+enter=text:\n

@@ -9,7 +9,7 @@ import (
 )
 
 func TestDevConfirmationDeclineHasNoSetupEffects(t *testing.T) {
-	for _, args := range [][]string{{}, {"-i", "nvim"}, {"--install", "neovim"}} {
+	for _, args := range [][]string{{}, {"-i", "nvim"}, {"--install", "neovim"}, {"--install", "ghostty"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
