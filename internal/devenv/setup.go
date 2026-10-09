@@ -96,7 +96,7 @@ func runner(in io.Reader, out io.Writer, lock func() *os.File) commandRunner {
 		var stdout, stderr bytes.Buffer
 		// Keep machine-readable stdout separate from Homebrew warnings on stderr.
 		cmd.Stdout, cmd.Stderr = io.MultiWriter(output, &stdout), io.MultiWriter(output, &stderr)
-		if filepath.Base(name) == "pgrep" || filepath.Base(name) == "xcrun" || (len(args) > 0 && (args[0] == "list" || args[0] == "info" || args[0] == "uses" || args[0] == "--prefix")) {
+		if filepath.Base(name) == "pgrep" || filepath.Base(name) == "xcrun" || (len(args) > 0 && (args[0] == "list" || args[0] == "info" || args[0] == "uses" || args[0] == "--prefix" || args[0] == "doctor")) {
 			cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		}
 		err := cmd.Run()
@@ -245,6 +245,10 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		if err == nil {
 			return
 		}
+		if i.journal == nil {
+			err = fmt.Errorf("%w; Neovim and Ghostty files were not changed. Fix the reported problem and retry mak setup dev", err)
+			return
+		}
 		if i.progress != nil {
 			i.progress.Close()
 		}
@@ -282,20 +286,31 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	i.env = setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_UPGRADE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_CLEANUP", "1")
+	if err = i.checkBrewPermissions(ctx); err != nil {
+		return err
+	}
 	if i.beforeFormulae, err = i.inventory(ctx, "--formula"); err != nil {
 		return err
 	}
 	if i.beforeCasks, err = i.inventory(ctx, "--cask"); err != nil {
 		return err
 	}
+	names, err := i.catalogNames(ctx)
+	if err != nil {
+		return err
+	}
+	var resolvedFormulae []string
+	for _, name := range formulae {
+		resolvedFormulae = append(resolvedFormulae, names[name])
+	}
 	if err = i.beginSetupJournal(true); err != nil {
 		return err
 	}
 	i.stage(2, "Installing coding tools, Ghostty and Nerd Fonts...")
-	if _, err = i.run(ctx, i.env, i.brew, append([]string{"install", "--formula"}, formulae...)...); err != nil {
+	if err = i.installMissing(ctx, "--formula", resolvedFormulae, i.beforeFormulae); err != nil {
 		return fmt.Errorf("installing coding tools: %w", err)
 	}
-	if _, err = i.run(ctx, i.env, i.brew, append([]string{"install", "--cask"}, casks...)...); err != nil {
+	if err = i.installMissing(ctx, "--cask", casks, i.beforeCasks); err != nil {
 		return fmt.Errorf("installing Ghostty and Nerd Fonts: %w", err)
 	}
 	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
@@ -519,6 +534,36 @@ func (i *installer) inventory(ctx context.Context, kind string) (map[string]bool
 		result[name] = true
 	}
 	return result, nil
+}
+
+// Let Homebrew check its own managed directories, including Intel and Apple
+// Silicon layouts, without changing ownership or blocking on unrelated warnings.
+func (i *installer) checkBrewPermissions(ctx context.Context) error {
+	env := setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
+	env = setEnv(env, "HOMEBREW_NO_ANALYTICS", "1")
+	if _, err := i.run(ctx, env, i.brew, "doctor", "check_access_directories", "check_exist_directories"); err != nil {
+		return fmt.Errorf("Homebrew permissions: %w\nRun brew doctor check_access_directories check_exist_directories as your normal user. If this account should manage Homebrew, apply its suggested directory repairs and retry. Do not run mak or brew with sudo", err)
+	}
+	return nil
+}
+
+func (i *installer) installMissing(ctx context.Context, kind string, names []string, installed map[string]bool) error {
+	var missing, kept []string
+	for _, name := range names {
+		if installed[name] {
+			kept = append(kept, name)
+		} else {
+			missing = append(missing, name)
+		}
+	}
+	if len(kept) != 0 {
+		ui.Step(i.out, "Keeping already installed packages: %s", strings.Join(kept, ", "))
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	_, err := i.run(ctx, i.env, i.brew, append([]string{"install", kind}, missing...)...)
+	return err
 }
 
 func (i *installer) replace(p *replacement) error {

@@ -128,6 +128,25 @@ func TestIndividualInstallDoesNotClaimPreexistingPackages(t *testing.T) {
 	}
 }
 
+func TestIndividualInstallChecksPermissionsBeforeChanges(t *testing.T) {
+	i, f := testInstaller(t)
+	paths := seedEnvironment(t, i)
+	f.fail = "doctor check_access_directories"
+	err := i.installPackage(context.Background(), packageForTest(t, "node"))
+	if err == nil || !strings.Contains(err.Error(), "Homebrew permissions") {
+		t.Fatalf("expected permission failure, got %v", err)
+	}
+	assertOriginals(t, paths)
+	if i.journal != nil {
+		t.Fatal("permission failure created a recovery journal")
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "brew install ") || strings.HasPrefix(call, "brew uninstall ") {
+			t.Fatalf("permission failure changed packages: %s", call)
+		}
+	}
+}
+
 func TestIndividualInstallFailureRollsBackNewPackages(t *testing.T) {
 	i, f := testInstaller(t)
 	paths := seedEnvironment(t, i)

@@ -76,4 +76,5 @@ func init() {
 	rootCmd.AddCommand(newUninstallCmd())
 	rootCmd.AddCommand(newDoctorCmd(devenv.Doctor))
 	rootCmd.AddCommand(newShellenvCmd())
+	configureCompletion(rootCmd)
 }

@@ -69,6 +69,9 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 			if f.aliases[p] != "" {
 				p = f.aliases[p]
 			}
+			if packages[p] {
+				return "", fmt.Errorf("%s is already installed", p)
+			}
 			packages[p] = true
 		}
 		if args[1] == "--formula" {
@@ -120,6 +123,56 @@ func testInstaller(t *testing.T) (*installer, *fakeSystem) {
 	f := &fakeSystem{formulae: map[string]bool{"git": true, "shared-dependency": true}, casks: map[string]bool{"existing-app": true}}
 	i := &installer{home: t.TempDir(), env: []string{"SHELL=/bin/zsh", "PATH=/usr/bin:/bin"}, brew: "/fake/brew/bin/brew", run: f.run, out: io.Discard}
 	return i, f
+}
+
+func TestSetupKeepsInstalledPackagesIncludingAliases(t *testing.T) {
+	i, f := testInstaller(t)
+	f.aliases = map[string]string{"python": "python@3.14"}
+	f.formulae["python@3.14"] = true
+	for _, name := range casks {
+		f.casks[name] = true
+	}
+	if err := i.setup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r, err := i.readRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range r.Formulae {
+		if name == "git" || name == "python@3.14" {
+			t.Fatalf("claimed preexisting package %s", name)
+		}
+	}
+	if len(r.Casks) != 0 {
+		t.Fatalf("claimed preexisting casks: %v", r.Casks)
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "brew install --cask") {
+			t.Fatalf("attempted to reinstall existing casks: %s", call)
+		}
+	}
+}
+
+func TestSetupPermissionsFailBeforeChanges(t *testing.T) {
+	i, f := testInstaller(t)
+	paths := seedEnvironment(t, i)
+	f.fail = "doctor check_access_directories"
+	var out bytes.Buffer
+	i.out = &out
+	err := i.setup(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Homebrew permissions") {
+		t.Fatalf("expected permission failure, got %v", err)
+	}
+	assertOriginals(t, paths)
+	if i.journal != nil || strings.Contains(out.String(), "restoring backups") || strings.Contains(err.Error(), "files restored") {
+		t.Fatalf("preflight claimed to restore untouched files: %v\n%s", err, &out)
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "brew install ") || strings.HasPrefix(call, "brew uninstall ") {
+			t.Fatalf("permission failure changed packages: %s", call)
+		}
+	}
 }
 
 func seedEnvironment(t *testing.T, i *installer) []string {

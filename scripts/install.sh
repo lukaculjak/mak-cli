@@ -72,4 +72,11 @@ fi
 
 echo ""
 echo "mak installed to $INSTALL_DIR/$BINARY"
+case "${SHELL:-}" in
+  */zsh)
+    if ! "$INSTALL_DIR/$BINARY" completion zsh --install; then
+      echo "Could not enable zsh completion. Retry with: mak completion zsh --install" >&2
+    fi
+    ;;
+esac
 echo "Run 'mak --help' to get started."

@@ -44,7 +44,7 @@ func doctorFixture(t *testing.T) (*installer, *bytes.Buffer, *bool) {
 		case "xcrun":
 			return "/compiler", nil
 		case "brew":
-			if !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) {
+			if !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) && !reflect.DeepEqual(args, []string{"doctor", "check_access_directories", "check_exist_directories"}) {
 				t.Fatalf("mutating/unexpected Homebrew call: %v", args)
 			}
 			if envValue(env, "HOMEBREW_NO_AUTO_UPDATE") != "1" {
@@ -90,6 +90,32 @@ func TestDoctorReadOnlyAndDiagnostics(t *testing.T) {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("missing %q: %s", text, out.String())
 		}
+	}
+}
+
+func TestDoctorReportsHomebrewPermissionsWithoutRepairs(t *testing.T) {
+	i, out, _ := doctorFixture(t)
+	before := snapshotFiles(t, i.home)
+	run := i.run
+	i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+		if filepath.Base(program) == "brew" && args[0] == "doctor" {
+			if envValue(env, "HOMEBREW_NO_AUTO_UPDATE") != "1" || envValue(env, "HOMEBREW_NO_ANALYTICS") != "1" {
+				t.Fatal("permission diagnostics did not disable updates/analytics")
+			}
+			return "", errors.New("/usr/local/Homebrew is not writable by your user")
+		}
+		return run(ctx, env, program, args...)
+	}
+	if err := i.doctor(context.Background()); !errors.Is(err, ErrUnhealthy) {
+		t.Fatalf("expected unhealthy Homebrew, got %v", err)
+	}
+	for _, text := range []string{"[error] Homebrew permissions", "/usr/local/Homebrew", "brew doctor check_access_directories"} {
+		if !strings.Contains(out.String(), text) {
+			t.Fatalf("missing permission diagnostic %q: %s", text, out)
+		}
+	}
+	if !reflect.DeepEqual(before, snapshotFiles(t, i.home)) {
+		t.Fatal("doctor changed files while reporting permission failure")
 	}
 }
 

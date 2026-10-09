@@ -218,7 +218,7 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
 	defer cancel()
 	defer func() {
-		if err != nil {
+		if err != nil && i.journal != nil {
 			cleanupCtx, stop := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer stop()
 			if cleanupErr := i.rollback(cleanupCtx); cleanupErr != nil {
@@ -254,6 +254,9 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 		ui.Success(i.out, "%s is already installed; leaving it as is.", p.name)
 		return nil
 	}
+	if err := i.checkBrewPermissions(ctx); err != nil {
+		return err
+	}
 	if err := i.ensureCompiler(ctx); err != nil {
 		return err
 	}
@@ -265,11 +268,11 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 		return err
 	}
 	ui.Step(i.out, "Installing %s and its dependencies...", p.name)
-	args := []string{"install", kind, name}
+	packages := []string{name}
 	if p.name == "ghostty" {
-		args = append(args, ghosttyFont)
+		packages = append(packages, ghosttyFont)
 	}
-	if _, err := i.run(ctx, i.env, i.brew, args...); err != nil {
+	if err := i.installMissing(ctx, kind, packages, before); err != nil {
 		return fmt.Errorf("installing %s: %w", p.name, err)
 	}
 	installed, err := i.inventory(ctx, kind)

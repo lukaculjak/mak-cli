@@ -118,6 +118,11 @@ func (i *installer) doctor(ctx context.Context) error {
 		r.add(status, "Homebrew", i.brew, repair)
 		i.env = setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 		i.env = setEnv(i.env, "HOMEBREW_NO_ANALYTICS", "1")
+		if err := i.checkBrewPermissions(ctx); err != nil {
+			r.add("error", "Homebrew permissions", err.Error(), "brew doctor check_access_directories check_exist_directories; resolve the reported permissions before retrying mak setup dev")
+		} else {
+			r.add("ok", "Homebrew permissions", "Managed directories are writable", "")
+		}
 		var err error
 		installedFormulae, err = i.inventory(ctx, "--formula")
 		if err == nil {

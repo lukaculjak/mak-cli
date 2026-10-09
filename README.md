@@ -15,6 +15,26 @@ curl -fsSL https://raw.githubusercontent.com/lukaculjak/mak-cli/main/scripts/ins
 
 Run `mak --help` to see all commands.
 
+For zsh users, the installer also enables mak tab completion in
+`${ZDOTDIR:-$HOME}/.zshrc`. Open a new terminal after installation. For an existing
+installation, enable it with:
+
+```sh
+mak completion zsh --install
+```
+
+This appends one block while preserving your shell settings, and needs no
+Homebrew directory access or sudo. `mak completion zsh` by itself only prints
+the generated script. To enable completion immediately in the current zsh session:
+
+```sh
+autoload -Uz compinit; compinit
+source <(mak completion zsh)
+```
+
+Other shells retain the generated-script instructions under
+`mak completion SHELL --help`.
+
 Interactive terminal output uses orange help headings, command names, flags,
 prompts, and setup steps, with labeled success, warning, and error messages.
 Command separators make each run easier to distinguish from your shell prompt.
@@ -59,6 +79,15 @@ JetBrains Mono Nerd Font, Ghostty, and Meslo LG Nerd Font. Homebrew's installer 
 install Apple's developer tools. If the C compiler is still missing, mak opens
 Apple's installation dialog and waits up to 20 minutes for you to finish it.
 Use a supported macOS/Homebrew combination and an internet connection.
+Setup checks Homebrew's managed-directory permissions before installing packages.
+If an existing Homebrew installation belongs to another account or has lost write
+access, setup stops before changing Neovim or Ghostty files. Run
+`brew doctor check_access_directories check_exist_directories` as your normal user
+and follow the reported directory repairs if this account should manage Homebrew.
+Do not run mak or brew with sudo. Permission repair may need sudo for the specific
+directories Homebrew identifies; mak does not change shared-directory ownership.
+Packages already installed via Homebrew are skipped, including versioned aliases
+such as Python, and remain outside mak's newly installed package ownership.
 Homebrew's `tree-sitter` package provides the library; `tree-sitter-cli` provides
 the executable required by LazyVim. Setup installs both and checks the CLI before
 replacing Neovim files or starting plugin installation.
@@ -210,6 +239,7 @@ mak doctor          # alias: mak healthcheck
 ```
 
 Doctor reports tools available on PATH, Apple developer tools, Homebrew packages,
+write permissions for Homebrew's managed directories,
 installation tracking and recovery files, bundled configuration changes, locked
 plugin revisions, syntax parsers, completion capabilities, and language-server
 startup. Green success messages, orange warnings, and red errors include suggested
