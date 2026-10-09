@@ -29,7 +29,8 @@ func packageCatalog() []packageSpec {
 		"elixir": "Elixir and its Erlang dependency", "ghc": "Glasgow Haskell Compiler",
 		"cabal-install": "Haskell build and package tools", "haskell-language-server": "Haskell language server",
 		"ripgrep": "Fast text search", "fd": "File search", "fzf": "Fuzzy finder",
-		"lazygit": "Terminal Git interface", "tree-sitter": "Tree-sitter tooling", "unzip": "Archive extraction",
+		"lazygit": "Terminal Git interface", "tree-sitter": "Tree-sitter parsing library",
+		"tree-sitter-cli": "Tree-sitter parser generator (provides tree-sitter)", "unzip": "Archive extraction",
 	}
 	var result []packageSpec
 	for _, name := range formulae {

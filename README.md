@@ -50,11 +50,14 @@ an error rather than an automatic yes. Homebrew/sudo may still request input.
 
 `mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
 if needed, Neovim, Git, Node/npm, Go, Python, Ruby, Elixir/Erlang, GHC/Cabal/Haskell
-Language Server, ripgrep, fd, fzf, lazygit, Tree-sitter, unzip, and JetBrains Mono
-Nerd Font. Homebrew's installer may ask for your administrator password and
+Language Server, ripgrep, fd, fzf, lazygit, Tree-sitter library/CLI, unzip, and
+JetBrains Mono Nerd Font. Homebrew's installer may ask for your administrator password and
 install Apple's developer tools. If the C compiler is still missing, mak opens
 Apple's installation dialog and waits up to 20 minutes for you to finish it.
 Use a supported macOS/Homebrew combination and an internet connection.
+Homebrew's `tree-sitter` package provides the library; `tree-sitter-cli` provides
+the executable required by LazyVim. Setup installs both and checks the CLI before
+replacing Neovim files or starting plugin installation.
 
 The command installs Luka's bundled LazyVim configuration at `~/.config/nvim`
 (or `$XDG_CONFIG_HOME/nvim`). It includes Gruvbox with hard contrast, Emmet,
@@ -159,6 +162,7 @@ mak setup dev --remove node   # or -r node
 mak setup dev -i nvim         # full LazyVim environment, with confirmation
 mak setup dev -r nvim         # Neovim only, restoring its original files
 mak setup dev -i font         # JetBrains Mono Nerd Font
+mak setup dev -i tree-sitter-cli # Tree-sitter executable for syntax parsers
 ```
 
 `nvim` is an alias for `neovim`, and `font` is an alias for

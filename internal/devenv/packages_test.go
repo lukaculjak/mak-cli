@@ -20,6 +20,23 @@ func packageForTest(t *testing.T, name string) packageSpec {
 	return p
 }
 
+func TestIndividualTreeSitterCLIInstallPreservesLibrary(t *testing.T) {
+	i, f := testInstaller(t)
+	f.formulae["tree-sitter"] = true
+	if err := i.installPackage(context.Background(), packageForTest(t, "tree-sitter-cli")); err != nil {
+		t.Fatal(err)
+	}
+	if !f.formulae["tree-sitter-cli"] {
+		t.Fatal("CLI was not installed")
+	}
+	if err := nextInvocation(i, f).removePackage(context.Background(), packageForTest(t, "tree-sitter-cli")); err != nil {
+		t.Fatal(err)
+	}
+	if f.formulae["tree-sitter-cli"] || !f.formulae["tree-sitter"] {
+		t.Fatalf("CLI removal affected the library: %v", f.formulae)
+	}
+}
+
 func TestListPackagesShowsInstalledAndOwnershipWithoutWriting(t *testing.T) {
 	i, f := testInstaller(t)
 	var out bytes.Buffer

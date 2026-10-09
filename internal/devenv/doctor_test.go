@@ -112,6 +112,19 @@ func TestDoctorMissingToolsAndRecoveryFiles(t *testing.T) {
 	}
 }
 
+func TestDoctorMissingTreeSitterSuggestsCLIPackage(t *testing.T) {
+	i, out, _ := doctorFixture(t)
+	if err := os.Remove(filepath.Join(i.home, "bin/tree-sitter")); err != nil {
+		t.Fatal(err)
+	}
+	if err := i.doctor(context.Background()); !errors.Is(err, ErrUnhealthy) {
+		t.Fatalf("error=%v", err)
+	}
+	if !strings.Contains(out.String(), "mak setup dev --install tree-sitter-cli") {
+		t.Fatalf("missing CLI repair command: %s", out.String())
+	}
+}
+
 func TestDoctorEditsAndSetupLockWarnWithoutStartingNeovim(t *testing.T) {
 	i, out, started := doctorFixture(t)
 	if err := os.WriteFile(filepath.Join(i.paths[0].path, "init.lua"), []byte("-- local edits"), 0600); err != nil {

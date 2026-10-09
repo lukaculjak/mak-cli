@@ -93,7 +93,7 @@ func (i *installer) doctor(ctx context.Context) error {
 		{"nvim", "neovim"}, {"git", "git"}, {"node", "node"}, {"npm", "node"}, {"go", "go"},
 		{"python3", "python"}, {"ruby", "ruby"}, {"elixir", "elixir"}, {"ghc", "ghc"},
 		{"cabal", "cabal-install"}, {"haskell-language-server-wrapper", "haskell-language-server"},
-		{"rg", "ripgrep"}, {"fd", "fd"}, {"fzf", "fzf"}, {"lazygit", "lazygit"}, {"tree-sitter", "tree-sitter"}, {"unzip", "unzip"},
+		{"rg", "ripgrep"}, {"fd", "fd"}, {"fzf", "fzf"}, {"lazygit", "lazygit"}, {"tree-sitter", "tree-sitter-cli"}, {"unzip", "unzip"},
 	} {
 		if err := ctx.Err(); err != nil {
 			return err

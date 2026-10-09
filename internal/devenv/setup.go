@@ -24,7 +24,7 @@ import (
 //go:embed assets
 var assets embed.FS
 
-var formulae = []string{"neovim", "git", "node", "go", "python", "ruby", "elixir", "ghc", "cabal-install", "haskell-language-server", "ripgrep", "fd", "fzf", "lazygit", "tree-sitter", "unzip"}
+var formulae = []string{"neovim", "git", "node", "go", "python", "ruby", "elixir", "ghc", "cabal-install", "haskell-language-server", "ripgrep", "fd", "fzf", "lazygit", "tree-sitter", "tree-sitter-cli", "unzip"}
 
 const font = "font-jetbrains-mono-nerd-font"
 
@@ -283,6 +283,12 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
 	}
 	i.env = setEnv(i.env, "PATH", strings.Join([]string{filepath.Join(prefix, "opt/ruby/bin"), filepath.Join(prefix, "opt/python/libexec/bin"), filepath.Join(prefix, "bin"), filepath.Join(prefix, "sbin"), envValue(i.env, "PATH")}, string(os.PathListSeparator)))
+	// Homebrew's tree-sitter formula supplies only the library. Require the CLI
+	// before LazyVim can attempt competing Mason installs during plugin startup.
+	ui.Step(i.out, "Checking Tree-sitter CLI...")
+	if _, err = i.run(ctx, i.env, filepath.Join(prefix, "bin/tree-sitter"), "--version"); err != nil {
+		return fmt.Errorf("Tree-sitter CLI could not run; install it with mak setup dev --install tree-sitter-cli and retry: %w", err)
+	}
 	for n := range i.paths {
 		if err = i.replace(&i.paths[n]); err != nil {
 			return fmt.Errorf("backing up Neovim: %w", err)

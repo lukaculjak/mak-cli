@@ -89,6 +89,12 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 	if f.fail != "" && strings.Contains(call, f.fail) {
 		return "", errors.New("simulated failure: " + call)
 	}
+	if filepath.Base(program) == "tree-sitter" {
+		if !f.formulae["tree-sitter-cli"] {
+			return "", errors.New("Tree-sitter library does not provide the CLI")
+		}
+		return "tree-sitter 0.27.0", nil
+	}
 	if filepath.Base(program) == "nvim" {
 		marker := filepath.Join(envValue(env, "MAK_NVIM_CONFIG"), ".mak-"+envValue(env, "MAK_NVIM_PHASE")+"-ok")
 		return "", os.WriteFile(marker, []byte("ok"), 0o644)
@@ -148,6 +154,50 @@ func TestSetupRetainsBackupsAndEmbedsConfig(t *testing.T) {
 	profile, err := os.ReadFile(filepath.Join(i.home, ".zprofile"))
 	if err != nil || !strings.Contains(string(profile), "shellenv") {
 		t.Fatalf("profile: %q %v", profile, err)
+	}
+}
+
+func TestSetupInstallsTreeSitterCLIBesidePreexistingLibrary(t *testing.T) {
+	i, f := testInstaller(t)
+	f.formulae["tree-sitter"] = true
+	if err := i.setup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r := mustRecord(t, i)
+	if !f.formulae["tree-sitter-cli"] || r.Packages["tree-sitter-cli"] != "tree-sitter-cli" {
+		t.Fatalf("CLI was not installed and tracked: %+v", r)
+	}
+	if r.Packages["tree-sitter"] != "" {
+		t.Fatal("preexisting library was claimed by mak")
+	}
+	if err := nextInvocation(i, f).uninstall(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !f.formulae["tree-sitter"] || f.formulae["tree-sitter-cli"] {
+		t.Fatalf("uninstall did not preserve the preexisting library: %v", f.formulae)
+	}
+}
+
+func TestSetupMissingTreeSitterCLIStopsBeforeReplacingFiles(t *testing.T) {
+	i, f := testInstaller(t)
+	paths := seedEnvironment(t, i)
+	f.fail = "tree-sitter --version"
+	if err := i.setup(context.Background()); err == nil || !strings.Contains(err.Error(), "tree-sitter-cli") {
+		t.Fatalf("expected actionable CLI error: %v", err)
+	}
+	assertOriginals(t, paths)
+	for _, p := range i.paths {
+		if p.backup != "" {
+			t.Fatalf("Neovim was replaced before checking the CLI: %+v", p)
+		}
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "nvim ") || strings.HasPrefix(call, "git clone ") {
+			t.Fatalf("plugin setup started without the CLI: %s", call)
+		}
+	}
+	if !reflect.DeepEqual(f.formulae, map[string]bool{"git": true, "shared-dependency": true}) || !reflect.DeepEqual(f.casks, map[string]bool{"existing-app": true}) {
+		t.Fatalf("failed preflight did not roll back packages: %v %v", f.formulae, f.casks)
 	}
 }
 
