@@ -123,7 +123,7 @@ local ok, failure = xpcall(function()
   for _, name in ipairs(vim.fn.sort(vim.tbl_keys(servers))) do
     local options = servers[name]
     if name ~= "*" and options ~= false and options.enabled ~= false then
-      local client
+      local client, companion
       check("Language server: " .. name, function()
         if options.mason ~= false then
           assert(registry.get_package(assert(mapping[name], "No Mason mapping")):is_installed(), "Language server is not installed")
@@ -135,6 +135,14 @@ local ok, failure = xpcall(function()
         vim.fn.bufload(buf)
         vim.api.nvim_set_current_buf(buf)
         vim.bo[buf].filetype = sample[1]
+        if name == "vue_ls" then
+          local settings = vim.deepcopy(assert(vim.lsp.config.vtsls, "Vue requires vtsls"))
+          settings.root_dir, settings.workspace_folders = root, nil
+          local id = assert(vim.lsp.start(settings, { bufnr = buf }), "Vue TypeScript companion could not start")
+          companion = assert(vim.lsp.get_client_by_id(id))
+          assert(vim.wait(30000, function() return companion.initialized or companion:is_stopped() end, 100)
+            and companion.initialized and not companion:is_stopped(), "Vue TypeScript companion failed to initialize")
+        end
         local settings = vim.deepcopy(assert(vim.lsp.config[name], "Server is not configured"))
         if name == "lua_ls" and type(settings.cmd) == "table" then
           vim.list_extend(settings.cmd, { "--logpath=" .. root .. "/lua-logs", "--metapath=" .. root .. "/lua-meta" })
@@ -153,9 +161,10 @@ local ok, failure = xpcall(function()
         return "Starts and completes LSP initialization"
       end, repair)
       if client then
-        client:stop(true)
-        vim.wait(3000, function() return client:is_stopped() end, 100)
+        client:stop()
+        if not vim.wait(3000, function() return client:is_stopped() end, 100) then client:stop(true) end
       end
+      if companion then companion:stop() end
     end
   end
   check("Neovim runtime", function()

@@ -1,16 +1,21 @@
 package devenv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/lukaculjak/mak-cli/internal/ui"
 )
 
 type fakeSystem struct {
@@ -154,6 +159,108 @@ func TestSetupRetainsBackupsAndEmbedsConfig(t *testing.T) {
 	profile, err := os.ReadFile(filepath.Join(i.home, ".zprofile"))
 	if err != nil || !strings.Contains(string(profile), "shellenv") {
 		t.Fatalf("profile: %q %v", profile, err)
+	}
+}
+
+func TestSetupProgressStagesAndFailureCleanup(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			i, f := testInstaller(t)
+			var out bytes.Buffer
+			i.progress = ui.NewProgress(&out)
+			defer i.progress.Close()
+			i.out = i.progress
+			if fail {
+				f.fail = "nvim --headless"
+			}
+			err := i.setup(context.Background())
+			if (err != nil) != fail {
+				t.Fatal(err)
+			}
+			last := 7
+			if fail {
+				last = 4
+			}
+			previous := -1
+			for step := 1; step <= 7; step++ {
+				position := strings.Index(out.String(), fmt.Sprintf("[step] Step %d/7:", step))
+				if step <= last {
+					if position <= previous {
+						t.Fatalf("stage %d missing or out of order: %s", step, out.String())
+					}
+					previous = position
+				} else if position != -1 {
+					t.Fatalf("stage %d reported after failure: %s", step, out.String())
+				}
+			}
+			if fail && !strings.Contains(out.String(), "Setup failed. Removing the incomplete environment") {
+				t.Fatal("recovery output is missing")
+			}
+			if strings.ContainsAny(out.String(), "\r\x1b") {
+				t.Fatal("animation leaked into redirected setup output")
+			}
+		})
+	}
+}
+
+func TestSetupNeovimStartupAndAsyncFailure(t *testing.T) {
+	nvim, err := exec.LookPath("nvim")
+	if err != nil {
+		t.Skip("Neovim is unavailable; the macOS smoke test exercises real setup")
+	}
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			i, f := testInstaller(t)
+			paths := seedEnvironment(t, i)
+			i.env = setEnv(i.env, "HOME", i.home)
+			i.env = setEnv(i.env, "NVIM_APPNAME", "nvim")
+			i.env = setEnv(i.env, "NVIM_LOG_FILE", filepath.Join(i.home, "nvim.log"))
+			for key, path := range map[string]string{"XDG_CONFIG_HOME": filepath.Dir(paths[0]), "XDG_DATA_HOME": filepath.Dir(paths[1]), "XDG_STATE_HOME": filepath.Dir(paths[2]), "XDG_CACHE_HOME": filepath.Dir(paths[3])} {
+				i.env = setEnv(i.env, key, path)
+			}
+			i.env = setEnv(i.env, "MAK_TEST_FAIL", fmt.Sprint(fail))
+			// Substitute local plugins while executing the real bundled script and
+			// production invocation. No downloads or host configuration are used.
+			i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+				if filepath.Base(program) != "nvim" || envValue(env, "MAK_NVIM_PHASE") != "plugins" {
+					return f.run(ctx, env, program, args...)
+				}
+				init := `
+assert(vim.fn.has("vim_starting") == 1, "Configuration must load during editor startup")
+package.preload["lazy.core.config"] = function() return { plugins = {} } end
+package.preload["lazy"] = function()
+  local finished = false
+  return {
+    install = function()
+      vim.defer_fn(function()
+        if vim.env.MAK_TEST_FAIL == "true" then
+          vim.notify("simulated asynchronous plugin failure", vim.log.levels.ERROR)
+        end
+        finished = true
+      end, 20)
+      assert(vim.wait(5000, function() return finished end), "Plugin task did not finish")
+    end,
+    restore = function() assert(finished, "Restore ran before installation completed") end,
+  }
+end
+`
+				if err := os.WriteFile(filepath.Join(envValue(env, "MAK_NVIM_CONFIG"), "init.lua"), []byte(init), 0600); err != nil {
+					return "", err
+				}
+				return runner(nil, io.Discard, nil)(ctx, env, nvim, args...)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			err := i.setup(ctx)
+			if fail {
+				if err == nil || !strings.Contains(err.Error(), "simulated asynchronous plugin failure") {
+					t.Fatalf("expected the specific asynchronous error, got %v", err)
+				}
+				assertOriginals(t, paths)
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

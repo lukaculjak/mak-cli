@@ -297,7 +297,7 @@ func (i *installer) doctorNeovim(ctx context.Context, r *healthReport) {
 		env = setEnv(env, key, value)
 	}
 	ui.Step(i.out, "Checking Neovim startup, locked plugins, parsers and language servers (downloads and installation writes blocked)...")
-	_, runErr := i.run(ctx, env, "/usr/bin/sandbox-exec", "-f", profile, nvim, "--headless", "-u", "NONE", "-i", "NONE", "-l", scriptPath)
+	_, runErr := i.run(ctx, env, "/usr/bin/sandbox-exec", "-f", profile, nvim, "--headless", "-u", "NONE", "-i", "NONE", "-S", scriptPath)
 	b, readErr := os.ReadFile(filepath.Join(tmp, "result.json"))
 	var result struct {
 		Checks   []diagnostic `json:"checks"`

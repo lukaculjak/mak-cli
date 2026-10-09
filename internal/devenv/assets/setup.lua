@@ -83,7 +83,7 @@ local function verify_lsp()
 
   -- Initialize every enabled server: installation alone does not prove it can run.
   local servers = plugin_opts("nvim-lspconfig").servers
-  -- Exercise one server at a time without FileType starting additional clients.
+  -- Start clients explicitly; Vue also needs its TypeScript companion.
   for name, opts in pairs(servers) do
     if name ~= "*" and opts ~= false and opts.enabled ~= false then
       vim.lsp.enable(name, false)
@@ -120,6 +120,15 @@ local function verify_lsp()
       local buf = vim.fn.bufadd(path)
       vim.fn.bufload(buf)
       vim.bo[buf].filetype = sample[1]
+      local companion
+      if name == "vue_ls" then
+        local settings = vim.deepcopy(assert(vim.lsp.config.vtsls, "Vue requires vtsls"))
+        settings.root_dir, settings.workspace_folders = root, nil
+        local id = assert(vim.lsp.start(settings, { bufnr = buf }), "Vue TypeScript companion could not start")
+        companion = assert(vim.lsp.get_client_by_id(id))
+        assert(vim.wait(180000, function() return companion.initialized or companion:is_stopped() end, 100)
+          and companion.initialized and not companion:is_stopped(), "Vue TypeScript companion failed to initialize")
+      end
       local config = vim.deepcopy(assert(vim.lsp.config[name], "LSP is not configured: " .. name))
       config.root_dir, config.workspace_folders = root, nil
       config.capabilities = require("blink.cmp").get_lsp_capabilities(config.capabilities)
@@ -143,8 +152,9 @@ local function verify_lsp()
         assert(result and not result.err and items and #items > 0, label .. " completion failed: " .. vim.inspect(err or result))
       end
       print("Verified language server: " .. name)
-      client:stop(true)
+      client:stop()
       assert(vim.wait(10000, function() return client:is_stopped() end, 100), "LSP did not stop: " .. name)
+      if companion then companion:stop() end
     end
   end
   vim.fn.delete(root, "rf")

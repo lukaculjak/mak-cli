@@ -35,6 +35,7 @@ type installer struct {
 	env                         []string
 	run                         commandRunner
 	out                         io.Writer
+	progress                    *ui.Progress
 	brew                        string
 	beforeFormulae, beforeCasks map[string]bool
 	paths                       []replacement
@@ -60,8 +61,10 @@ func Setup(ctx context.Context, in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	i := &installer{home: home, env: os.Environ(), out: out}
-	i.run = runner(in, out, func() *os.File { return i.lockFile })
+	progress := ui.NewProgress(out)
+	defer progress.Close()
+	i := &installer{home: home, env: os.Environ(), out: progress, progress: progress}
+	i.run = runner(in, progress, func() *os.File { return i.lockFile })
 	return i.setup(ctx)
 }
 
@@ -81,6 +84,12 @@ func runner(in io.Reader, out io.Writer, lock func() *os.File) commandRunner {
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 		}
 		cmd.WaitDelay = 5 * time.Second
+		if filepath.Base(name) == "bash" {
+			if progress, ok := out.(*ui.Progress); ok {
+				progress.Pause()
+				defer progress.Resume()
+			}
+		}
 		var stdout, stderr bytes.Buffer
 		// Keep machine-readable stdout separate from Homebrew warnings on stderr.
 		cmd.Stdout, cmd.Stderr = io.MultiWriter(output, &stdout), io.MultiWriter(output, &stderr)
@@ -225,6 +234,9 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		if err == nil {
 			return
 		}
+		if i.progress != nil {
+			i.progress.Close()
+		}
 		committing := i.journal != nil && i.journal.Commit != nil
 		if committing {
 			ui.Warning(i.out, "Setup verified; completing its installation record. Files and recovery journal are retained until this succeeds.")
@@ -246,6 +258,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	ui.Step(i.out, "Installing Luka's coding environment.")
 	ui.Warning(i.out, "Existing Neovim files will be replaced with backups retained.")
 	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites and remain after a failure.")
+	i.stage(1, "Checking Homebrew and Apple developer tools...")
 	if err = i.ensureBrew(ctx); err != nil {
 		return fmt.Errorf("installing Homebrew: %w", err)
 	}
@@ -267,7 +280,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if err = i.beginSetupJournal(true); err != nil {
 		return err
 	}
-	ui.Step(i.out, "Installing Neovim, language runtimes, search tools and a Nerd Font...")
+	i.stage(2, "Installing coding tools and Nerd Font...")
 	if _, err = i.run(ctx, i.env, i.brew, append([]string{"install", "--formula"}, formulae...)...); err != nil {
 		return fmt.Errorf("installing coding tools: %w", err)
 	}
@@ -283,6 +296,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
 	}
 	i.env = setEnv(i.env, "PATH", strings.Join([]string{filepath.Join(prefix, "opt/ruby/bin"), filepath.Join(prefix, "opt/python/libexec/bin"), filepath.Join(prefix, "bin"), filepath.Join(prefix, "sbin"), envValue(i.env, "PATH")}, string(os.PathListSeparator)))
+	i.stage(3, "Backing up Neovim and preparing LazyVim...")
 	// Homebrew's tree-sitter formula supplies only the library. Require the CLI
 	// before LazyVim can attempt competing Mason installs during plugin startup.
 	ui.Step(i.out, "Checking Tree-sitter CLI...")
@@ -340,25 +354,34 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	}
 	// Run from the configuration directory so project plugins cannot influence setup.
 	i.env = setEnv(i.env, "MAK_NVIM_CONFIG", config)
-	for _, phase := range []string{"plugins", "tools", "verify"} {
-		ui.Step(i.out, "Neovim setup: %s...", phase)
-		i.env = setEnv(i.env, "MAK_NVIM_PHASE", phase)
-		marker := filepath.Join(config, ".mak-"+phase+"-ok")
-		if _, err = i.run(ctx, i.env, filepath.Join(prefix, "bin/nvim"), "--headless", "-u", "NONE", "-l", script.Name()); err != nil {
-			return fmt.Errorf("Neovim %s phase: %w", phase, err)
+	for n, phase := range []struct{ name, text string }{
+		{"plugins", "Installing Neovim plugins..."},
+		{"tools", "Installing language servers and syntax parsers..."},
+		{"verify", "Verifying language servers, completion and definitions..."},
+	} {
+		i.stage(n+4, phase.text)
+		i.env = setEnv(i.env, "MAK_NVIM_PHASE", phase.name)
+		marker := filepath.Join(config, ".mak-"+phase.name+"-ok")
+		// Use editor startup: -l script mode can exit during asynchronous plugin work.
+		if _, err = i.run(ctx, i.env, filepath.Join(prefix, "bin/nvim"), "--headless", "-u", "NONE", "-i", "NONE", "-S", script.Name()); err != nil {
+			return fmt.Errorf("Neovim %s phase: %w", phase.name, err)
 		}
 		if _, err = os.Stat(marker); err != nil {
-			return fmt.Errorf("Neovim %s phase did not finish successfully", phase)
+			return fmt.Errorf("Neovim %s phase did not finish successfully", phase.name)
 		}
 		if err = os.Remove(marker); err != nil {
 			return err
 		}
 	}
+	i.stage(7, "Configuring shell and saving installation record...")
 	if err = i.configureShell(prefix); err != nil {
 		return fmt.Errorf("configuring shell PATH: %w", err)
 	}
 	if err = i.recordInstallation(ctx, record); err != nil {
 		return fmt.Errorf("saving installation record: %w", err)
+	}
+	if i.progress != nil {
+		i.progress.Close()
 	}
 	ui.Success(i.out, "Coding environment ready at %s.", config)
 	fmt.Fprintln(i.out, "Open a new terminal, or refresh this zsh/bash session with: eval \"$(mak shellenv)\"")
@@ -370,6 +393,14 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		}
 	}
 	return nil
+}
+
+func (i *installer) stage(step int, text string) {
+	if i.progress != nil {
+		i.progress.Stage(step, 7, text)
+	} else {
+		ui.Step(i.out, "Step %d/7: %s", step, text)
+	}
 }
 
 // Resolve existing ancestors so XDG aliases cannot hide overlapping directories.

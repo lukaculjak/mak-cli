@@ -48,6 +48,10 @@ above the prompt points to the package list. To explicitly skip this confirmatio
 (for example, in a script), use `mak setup dev --yes` or `-y`. Missing stdin is
 an error rather than an automatic yes. Homebrew/sudo may still request input.
 
+During installation, mak shows seven numbered stages and an orange spinner below
+the live installation logs. The spinner pauses for Homebrew's interactive installer.
+Redirected output, `TERM=dumb`, and `NO_COLOR` use plain stage lines without animation.
+
 `mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
 if needed, Neovim, Git, Node/npm, Go, Python, Ruby, Elixir/Erlang, GHC/Cabal/Haskell
 Language Server, ripgrep, fd, fzf, lazygit, Tree-sitter library/CLI, unzip, and

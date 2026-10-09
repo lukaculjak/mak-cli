@@ -177,6 +177,9 @@ func InstallPackage(ctx context.Context, in io.Reader, out io.Writer, name strin
 	if err != nil {
 		return err
 	}
+	if p.name == "neovim" {
+		return Setup(ctx, in, out)
+	}
 	i, err := packageInstaller(in, out)
 	if err != nil {
 		return err
