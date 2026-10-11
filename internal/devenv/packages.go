@@ -110,7 +110,7 @@ func packageInstaller(in io.Reader, out io.Writer) (*installer, error) {
 	if err != nil {
 		return nil, err
 	}
-	i := &installer{home: home, env: os.Environ(), out: out}
+	i := &installer{home: home, in: in, env: os.Environ(), out: out}
 	i.run = runner(in, out, func() *os.File { return i.lockFile })
 	return i, nil
 }
@@ -254,7 +254,7 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 		ui.Success(i.out, "%s is already installed; leaving it as is.", p.name)
 		return nil
 	}
-	if err := i.checkBrewPermissions(ctx); err != nil {
+	if err := i.ensureBrewPermissions(ctx); err != nil {
 		return err
 	}
 	if err := i.ensureCompiler(ctx); err != nil {

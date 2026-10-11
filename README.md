@@ -121,6 +121,18 @@ are retained as adjacent `nvim.mak-backup-*` backups. Existing dotfiles symlinks
 are backed up as symlinks; their targets are left intact. XDG directory overrides
 are respected. Run no other Homebrew installations concurrently with setup.
 
+If an existing Homebrew installation is not writable by your account, setup
+offers a separate permission repair prompt that defaults to no. It lists the
+affected directories before asking for an explicit yes, even with `--yes`.
+After approval, mak uses `sudo` to change ownership of those directories and their
+contents to the current account, grants write access, and rechecks permissions
+before installing packages. This can affect other accounts sharing Homebrew;
+permission repairs remain after a setup failure or uninstall. Run mak as your
+normal user, without `sudo`; the repair itself may request an administrator password.
+Unknown diagnostics, missing directories, or paths outside the supported Homebrew
+prefix need manual repair using the suggestions from
+`brew doctor check_access_directories check_exist_directories`.
+
 On failure or Ctrl-C, mak removes the incomplete Neovim and Ghostty configuration, restores
 the old directories, and removes Homebrew formulae/casks introduced by the run,
 including their newly installed formula dependencies. Existing packages are not
@@ -243,7 +255,9 @@ write permissions for Homebrew's managed directories,
 installation tracking and recovery files, bundled configuration changes, locked
 plugin revisions, syntax parsers, completion capabilities, and language-server
 startup. Green success messages, orange warnings, and red errors include suggested
-repair commands where needed. Repairs are never run automatically. The final line
+repair commands where needed. Doctor never performs repairs. If Homebrew permissions
+fail, resolve them first and rerun `mak setup dev`; missing tools and configuration
+may be consequences of setup stopping before installation. The final line
 prints the current mak version. Failed checks exit with status 1; warnings alone
 exit with status 0.
 

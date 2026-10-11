@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -172,6 +173,31 @@ func TestSetupPermissionsFailBeforeChanges(t *testing.T) {
 		if strings.HasPrefix(call, "brew install ") || strings.HasPrefix(call, "brew uninstall ") {
 			t.Fatalf("permission failure changed packages: %s", call)
 		}
+	}
+}
+
+func TestRunnerSudoSharesForegroundProcessGroup(t *testing.T) {
+	if os.Getenv("MAK_TEST_SUDO_PROCESS_GROUP") == "1" {
+		fmt.Print(syscall.Getpgrp())
+		os.Exit(0)
+	}
+	program := filepath.Join(t.TempDir(), "sudo")
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(testBinary, program); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	env := setEnv(os.Environ(), "MAK_TEST_SUDO_PROCESS_GROUP", "1")
+	output, err := runner(nil, io.Discard, nil)(ctx, env, program, "-test.run=^TestRunnerSudoSharesForegroundProcessGroup$")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(output) != fmt.Sprint(syscall.Getpgrp()) {
+		t.Fatalf("sudo must share mak's foreground process group: %q", output)
 	}
 }
 

@@ -35,6 +35,7 @@ type commandRunner func(context.Context, []string, string, ...string) (string, e
 
 type installer struct {
 	home                        string
+	in                          io.Reader
 	env                         []string
 	run                         commandRunner
 	out                         io.Writer
@@ -66,7 +67,7 @@ func Setup(ctx context.Context, in io.Reader, out io.Writer) error {
 	}
 	progress := ui.NewProgress(out)
 	defer progress.Close()
-	i := &installer{home: home, env: os.Environ(), out: progress, progress: progress}
+	i := &installer{home: home, in: in, env: os.Environ(), out: progress, progress: progress}
 	i.run = runner(in, progress, func() *os.File { return i.lockFile })
 	return i.setup(ctx)
 }
@@ -80,14 +81,15 @@ func runner(in io.Reader, out io.Writer, lock func() *os.File) commandRunner {
 		if lock != nil && lock() != nil {
 			cmd.ExtraFiles = []*os.File{lock()}
 		}
-		// Homebrew's installer must share the foreground group to read terminal
+		// Homebrew's installer and sudo must share the foreground group to read terminal
 		// input and sudo passwords. Other commands can be cancelled with children.
-		if filepath.Base(name) != "bash" {
+		interactive := filepath.Base(name) == "bash" || filepath.Base(name) == "sudo"
+		if !interactive {
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 		}
 		cmd.WaitDelay = 5 * time.Second
-		if filepath.Base(name) == "bash" {
+		if interactive {
 			if progress, ok := out.(*ui.Progress); ok {
 				progress.Pause()
 				defer progress.Resume()
@@ -286,7 +288,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	i.env = setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_UPGRADE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_CLEANUP", "1")
-	if err = i.checkBrewPermissions(ctx); err != nil {
+	if err = i.ensureBrewPermissions(ctx); err != nil {
 		return err
 	}
 	if i.beforeFormulae, err = i.inventory(ctx, "--formula"); err != nil {

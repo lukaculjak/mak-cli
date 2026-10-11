@@ -95,6 +95,7 @@ func TestDoctorReadOnlyAndDiagnostics(t *testing.T) {
 
 func TestDoctorReportsHomebrewPermissionsWithoutRepairs(t *testing.T) {
 	i, out, _ := doctorFixture(t)
+	i.in = strings.NewReader("yes\n")
 	before := snapshotFiles(t, i.home)
 	run := i.run
 	i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
@@ -109,10 +110,13 @@ func TestDoctorReportsHomebrewPermissionsWithoutRepairs(t *testing.T) {
 	if err := i.doctor(context.Background()); !errors.Is(err, ErrUnhealthy) {
 		t.Fatalf("expected unhealthy Homebrew, got %v", err)
 	}
-	for _, text := range []string{"[error] Homebrew permissions", "/usr/local/Homebrew", "brew doctor check_access_directories"} {
+	for _, text := range []string{"[error] Homebrew permissions", "/usr/local/Homebrew", "brew doctor check_access_directories", "Resolve Homebrew permissions first", "offers an opt-in permission repair"} {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("missing permission diagnostic %q: %s", text, out)
 		}
+	}
+	if strings.Contains(out.String(), "Homebrew permissions: Homebrew permissions:") || strings.Contains(out.String(), "[y/N]") {
+		t.Fatalf("duplicated error label or repair prompt in read-only doctor: %s", out)
 	}
 	if !reflect.DeepEqual(before, snapshotFiles(t, i.home)) {
 		t.Fatal("doctor changed files while reporting permission failure")

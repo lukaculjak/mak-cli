@@ -110,6 +110,7 @@ func (i *installer) doctor(ctx context.Context) error {
 		r.add("ok", "Apple developer tools", "C compiler is available", "")
 	}
 	var installedFormulae, installedCasks map[string]bool
+	brewPermissionsFailed := false
 	if i.findBrew() {
 		status, repair := "ok", ""
 		if executable(path, "brew") == "" {
@@ -119,7 +120,8 @@ func (i *installer) doctor(ctx context.Context) error {
 		i.env = setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 		i.env = setEnv(i.env, "HOMEBREW_NO_ANALYTICS", "1")
 		if err := i.checkBrewPermissions(ctx); err != nil {
-			r.add("error", "Homebrew permissions", err.Error(), "brew doctor check_access_directories check_exist_directories; resolve the reported permissions before retrying mak setup dev")
+			brewPermissionsFailed = true
+			r.add("error", "Homebrew permissions", strings.TrimPrefix(err.Error(), "Homebrew permissions: "), "mak setup dev (offers an opt-in permission repair); or apply the directory repairs suggested by brew doctor manually")
 		} else {
 			r.add("ok", "Homebrew permissions", "Managed directories are writable", "")
 		}
@@ -227,6 +229,9 @@ func (i *installer) doctor(ctx context.Context) error {
 		return err
 	}
 	fmt.Fprintln(i.out)
+	if brewPermissionsFailed {
+		fmt.Fprintln(i.out, "Resolve Homebrew permissions first, then rerun mak setup dev. Missing tools and configuration may be consequences of setup stopping at this prerequisite.")
+	}
 	if r.errors != 0 {
 		ui.Error(i.out, "Doctor found %d error(s) and %d warning(s).", r.errors, r.warnings)
 		return ErrUnhealthy

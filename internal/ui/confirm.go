@@ -10,9 +10,22 @@ import (
 
 // Confirm defaults to yes on Enter, but never treats missing input as consent.
 func Confirm(ctx context.Context, in io.Reader, out io.Writer, question string) (bool, error) {
+	return confirm(ctx, in, out, question, true)
+}
+
+// ConfirmOptIn requires an explicit yes; Enter and missing input decline.
+func ConfirmOptIn(ctx context.Context, in io.Reader, out io.Writer, question string) (bool, error) {
+	return confirm(ctx, in, out, question, false)
+}
+
+func confirm(ctx context.Context, in io.Reader, out io.Writer, question string, defaultYes bool) (bool, error) {
+	choices, defaultText := " [y/N]: ", "no"
+	if defaultYes {
+		choices, defaultText = " [Y/n]: ", "yes"
+	}
 	for {
 		p := colors(out)
-		fmt.Fprint(out, p.paint(p.orange, question+" [Y/n]: "))
+		fmt.Fprint(out, p.paint(p.orange, question+choices))
 		type reply struct {
 			text string
 			err  error
@@ -42,15 +55,20 @@ func Confirm(ctx context.Context, in io.Reader, out io.Writer, question string) 
 		}
 		text := strings.ToLower(strings.TrimSpace(answer.text))
 		if text == "" && answer.err != nil {
+			if !defaultYes {
+				return false, nil
+			}
 			return false, fmt.Errorf("confirmation requires input; use --yes to confirm installation without a prompt")
 		}
 		switch text {
-		case "", "y", "yes":
+		case "":
+			return defaultYes, nil
+		case "y", "yes":
 			return true, nil
 		case "n", "no":
 			return false, nil
 		default:
-			fmt.Fprintln(out, "Please enter yes or no (Enter selects yes).")
+			fmt.Fprintf(out, "Please enter yes or no (Enter selects %s).\n", defaultText)
 		}
 	}
 }

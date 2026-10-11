@@ -20,6 +20,7 @@ func newDevCmd() *cobra.Command {
 		Short:   "Install Luka's Neovim and Ghostty coding environment (macOS)",
 		Long: `Install Homebrew prerequisites, the bundled LazyVim environment and Ghostty settings.
 The installation confirmation defaults to yes when you press Enter; --yes skips it.
+Homebrew permission repair requires a separate explicit yes, even with --yes.
 Use --list (-l) to preview software and Homebrew installation status.
 Use --install (-i) PACKAGE or --remove (-r) PACKAGE to manage one tracked package.
 Installing neovim (alias: nvim) runs the full LazyVim environment setup.

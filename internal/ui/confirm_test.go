@@ -37,6 +37,27 @@ func TestConfirmDoesNotAssumeYesWithoutInput(t *testing.T) {
 	}
 }
 
+func TestConfirmOptIn(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  bool
+	}{{"", false}, {"\n", false}, {"no\n", false}, {"yes\n", true}, {" Y \r\n", true}, {"maybe\n\n", false}} {
+		t.Run(tc.input, func(t *testing.T) {
+			var out bytes.Buffer
+			yes, err := ConfirmOptIn(context.Background(), strings.NewReader(tc.input), &out, "Repair?")
+			if err != nil || yes != tc.want || !strings.Contains(out.String(), "Repair? [y/N]: ") {
+				t.Fatalf("yes=%v err=%v output=%q", yes, err, &out)
+			}
+		})
+	}
+	in := strings.NewReader("yes\npassword input\n")
+	yes, err := ConfirmOptIn(context.Background(), in, io.Discard, "Repair?")
+	remaining, _ := io.ReadAll(in)
+	if err != nil || !yes || string(remaining) != "password input\n" {
+		t.Fatalf("stdin consumed past repair prompt: %v %v %q", yes, err, remaining)
+	}
+}
+
 func TestConfirmLeavesSubsequentInputAvailable(t *testing.T) {
 	in := strings.NewReader("\nsubsequent input\n")
 	yes, err := Confirm(context.Background(), in, io.Discard, "Install?")
