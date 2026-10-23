@@ -7,24 +7,27 @@ import (
 	"syscall"
 
 	"github.com/lukaculjak/mak-cli/internal/devenv"
+	"github.com/lukaculjak/mak-cli/internal/productivity"
 	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 func newDevCmd() *cobra.Command {
-	var uninstall, list, yes bool
+	var uninstall, list, yes, neorg, pomodoro bool
 	var install, remove string
 	cmd := &cobra.Command{
 		Use:     "dev",
 		Aliases: []string{"codeenv", "codingenv"},
 		Short:   "Install Luka's Neovim and Ghostty coding environment (macOS)",
-		Long: `Install Homebrew prerequisites, the bundled LazyVim environment and Ghostty settings.
+		Long: `Install Homebrew prerequisites, the bundled LazyVim environment, Neorg, Pomodoro timers and Ghostty settings.
+Use --neorg or --pomodoro to install only that feature.
+Full setup schedules a weekday Neorg journal reminder at 09:17 local time.
 The installation confirmation defaults to yes when you press Enter; --yes skips it.
 Homebrew permission repair requires a separate explicit yes, even with --yes.
 Use --list (-l) to preview software and Homebrew installation status.
 Use --install (-i) PACKAGE or --remove (-r) PACKAGE to manage one tracked package.
 Installing neovim (alias: nvim) runs the full LazyVim environment setup.
-Installing ghostty includes Luka's configuration and Meslo Nerd Font.
+Installing ghostty includes Luka's configuration, Maple Mono NF and a Meslo fallback.
 Existing Neovim configuration, data, state and cache are backed up before replacement.
 Existing Ghostty configuration directories are also backed up before replacement.
 Failed setup restores those backups and removes newly installed Homebrew packages.
@@ -36,6 +39,12 @@ Homebrew, Apple developer tools, and packages needed by other tools are retained
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			if neorg {
+				return setupNeorg(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
+			}
+			if pomodoro {
+				return setupPomodoro(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
+			}
 			if list {
 				return devenv.ListPackages(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
 			}
@@ -52,12 +61,15 @@ Homebrew, Apple developer tools, and packages needed by other tools are retained
 				return devenv.RemovePackage(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), remove)
 			}
 			if uninstall {
-				return devenv.Uninstall(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
+				if err := devenv.Uninstall(ctx, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
+					return err
+				}
+				return productivity.ConfigureReminder(ctx, cmd.OutOrStdout(), true)
 			}
 			if !yes {
 				ui.Heading(cmd.OutOrStdout(), "Luka's coding environment")
 				if install == "ghostty" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Install Ghostty, Meslo Nerd Font and Luka's configuration. Existing Ghostty files will be backed up and replaced.")
+					fmt.Fprintln(cmd.OutOrStdout(), "Install Ghostty, Maple Mono NF and Luka's configuration. Existing Ghostty files will be backed up and replaced.")
 				} else {
 					fmt.Fprintln(cmd.OutOrStdout(), "Install coding tools, LazyVim and Ghostty. Existing Neovim and Ghostty files will be backed up and replaced.")
 				}
@@ -74,7 +86,10 @@ Homebrew, Apple developer tools, and packages needed by other tools are retained
 			if install == "ghostty" {
 				return devenv.InstallPackage(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), install)
 			}
-			return devenv.Setup(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
+			if err := devenv.Setup(ctx, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			return productivity.ConfigureReminder(ctx, cmd.OutOrStdout(), false)
 		},
 	}
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the tracked coding environment and restore previous Neovim and Ghostty files")
@@ -82,6 +97,8 @@ Homebrew, Apple developer tools, and packages needed by other tools are retained
 	cmd.Flags().StringVarP(&install, "install", "i", "", "install a package; neovim/nvim installs the full LazyVim environment")
 	cmd.Flags().StringVarP(&remove, "remove", "r", "", "remove one package tracked by mak (e.g. --remove neovim)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm the full environment or Ghostty installation without a prompt")
-	cmd.MarkFlagsMutuallyExclusive("list", "install", "remove", "uninstall")
+	cmd.Flags().BoolVar(&neorg, "neorg", false, "install Neorg only, retaining the existing LazyVim environment")
+	cmd.Flags().BoolVar(&pomodoro, "pomodoro", false, "install Pomodoro timers and notifications only")
+	cmd.MarkFlagsMutuallyExclusive("list", "install", "remove", "uninstall", "neorg", "pomodoro")
 	return cmd
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lukaculjak/mak-cli/internal/productivity"
 	"github.com/lukaculjak/mak-cli/internal/ui"
 )
 
@@ -64,7 +65,9 @@ func Doctor(ctx context.Context, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	i := &installer{home: home, env: os.Environ(), out: out, run: runner(strings.NewReader(""), io.Discard, nil)}
-	return i.doctor(ctx)
+	err = i.doctor(ctx)
+	productivity.ICloudStatus(ctx, out)
+	return err
 }
 
 func executable(path, name string) string {
@@ -93,7 +96,7 @@ func (i *installer) doctor(ctx context.Context) error {
 		{"nvim", "neovim"}, {"git", "git"}, {"node", "node"}, {"npm", "node"}, {"go", "go"},
 		{"python3", "python"}, {"ruby", "ruby"}, {"elixir", "elixir"}, {"ghc", "ghc"},
 		{"cabal", "cabal-install"}, {"haskell-language-server-wrapper", "haskell-language-server"},
-		{"rg", "ripgrep"}, {"fd", "fd"}, {"fzf", "fzf"}, {"lazygit", "lazygit"}, {"tree-sitter", "tree-sitter-cli"}, {"unzip", "unzip"},
+		{"luarocks", "luarocks"}, {"timer", "timer"}, {"terminal-notifier", "terminal-notifier"}, {"rg", "ripgrep"}, {"fd", "fd"}, {"fzf", "fzf"}, {"lazygit", "lazygit"}, {"tree-sitter", "tree-sitter-cli"}, {"unzip", "unzip"},
 	} {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -125,6 +128,11 @@ func (i *installer) doctor(ctx context.Context) error {
 		} else {
 			r.add("ok", "Homebrew permissions", "Managed directories are writable", "")
 		}
+		if _, err := i.catalogNames(ctx); err != nil {
+			r.add("error", "Homebrew package metadata", err.Error(), "brew update; if still failing, run brew config and sw_vers and inspect the reported Homebrew error")
+		} else {
+			r.add("ok", "Homebrew package metadata", "Coding package definitions can be read", "")
+		}
 		var err error
 		installedFormulae, err = i.inventory(ctx, "--formula")
 		if err == nil {
@@ -138,7 +146,7 @@ func (i *installer) doctor(ctx context.Context) error {
 			r.add("warning", "Nerd Font", "JetBrains Mono Nerd Font is not installed via Homebrew", "mak setup dev --install font")
 		}
 		if installedCasks != nil {
-			for _, pkg := range []string{"ghostty", ghosttyFont} {
+			for _, pkg := range []string{"ghostty", ghosttyFont, primaryFont} {
 				if installedCasks[pkg] {
 					r.add("ok", "Homebrew: "+pkg, "Installed", "")
 				} else {

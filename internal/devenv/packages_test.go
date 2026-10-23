@@ -285,3 +285,65 @@ func TestIndividualFontInstallAndRemoval(t *testing.T) {
 		t.Fatalf("mak's shell block remains: %v", err)
 	}
 }
+
+func TestTimerUsesQualifiedTapForInstallAndCanonicalNameForTracking(t *testing.T) {
+	i, f := testInstaller(t)
+	baseRun := i.run
+	i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "info" {
+			for _, name := range args {
+				if name == timerFormula {
+					t.Fatal("metadata lookup should not require a third-party tap")
+				}
+			}
+		}
+		return baseRun(ctx, env, program, args...)
+	}
+	if err := i.installPackage(context.Background(), packageForTest(t, "timer")); err != nil {
+		t.Fatal(err)
+	}
+	r := mustRecord(t, i)
+	if !f.formulae["timer"] || r.Packages[timerFormula] != "timer" {
+		t.Fatalf("timer was not tracked by canonical name: %+v", r)
+	}
+	found := false
+	for _, call := range f.calls {
+		if strings.Contains(call, "install --formula "+timerFormula) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("install did not use the qualified tap formula")
+	}
+	if err := nextInvocation(i, f).removePackage(context.Background(), packageForTest(t, "timer")); err != nil {
+		t.Fatal(err)
+	}
+	if f.formulae["timer"] {
+		t.Fatal("timer was not removed")
+	}
+}
+
+func TestLegacyRcloneOwnershipSurvivesICloudMigration(t *testing.T) {
+	i, f := testInstaller(t)
+	// Simulate the prior release's tracked optional package.
+	if err := i.installPackage(context.Background(), packageForTest(t, "rclone")); err != nil {
+		t.Fatal(err)
+	}
+	if err := nextInvocation(i, f).setup(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range packageCatalog() {
+		if p.name == "rclone" {
+			t.Fatal("legacy sync tool is still offered by default")
+		}
+	}
+	if mustRecord(t, i).Packages["rclone"] != "rclone" {
+		t.Fatal("migration lost legacy package ownership")
+	}
+	if err := nextInvocation(i, f).removePackage(context.Background(), packageForTest(t, "rclone")); err != nil {
+		t.Fatal(err)
+	}
+	if f.formulae["rclone"] {
+		t.Fatal("could not remove tracked legacy tool")
+	}
+}

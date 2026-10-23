@@ -72,7 +72,12 @@ end
 
 local function verify_lsp()
   require("lazy").load({ plugins = { "nvim-lspconfig", "blink.cmp", "nvim-treesitter" } })
-  assert(vim.g.colors_name == "gruvbox", "Gruvbox theme did not load")
+  assert(vim.g.colors_name == "duskfox", "Duskfox theme did not load")
+  require("neorg").org_file_entered(true)
+  for _, language in ipairs({ "norg", "norg_meta" }) do
+    assert(pcall(vim.treesitter.language.add, language), "Neorg parser missing: " .. language)
+  end
+  assert(require("neorg").modules.get_module("core.journal"), "Neorg journal did not load")
   assert(require("blink.cmp").get_lsp_capabilities().textDocument.completion, "Completion capabilities missing")
   for _, tool in ipairs({ "node", "npm", "go", "ruby", "python3", "elixir", "ghc", "cabal", "haskell-language-server-wrapper", "rg", "fd", "tree-sitter" }) do
     assert(vim.fn.executable(tool) == 1, "Missing executable: " .. tool)
@@ -90,6 +95,8 @@ local function verify_lsp()
     end
   end
   local samples = {
+    clangd = { "cpp", "sample.cpp", "int main() { return 0; }" },
+    tailwindcss = { "html", "tailwind.html", '<div class="flex"></div>' },
     cssls = { "css", "sample.css", "body { color: red; }" },
     html = { "html", "sample.html", "<!doctype html><html></html>" },
     jsonls = { "json", "sample.json", "{}" },

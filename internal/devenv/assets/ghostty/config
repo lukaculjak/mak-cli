@@ -17,8 +17,8 @@ resize-overlay = never
 window-save-state = always
 
 # Font
-font-family = "MesloLGS NF"
-# Homebrew's Meslo family is the fallback on a fresh machine.
+font-family = "Maple Mono NF"
+# Keep Meslo as a fallback for missing glyphs.
 font-family = "MesloLGS Nerd Font"
 font-size = 16
 

@@ -22,7 +22,7 @@ func doctorFixture(t *testing.T) (*installer, *bytes.Buffer, *bool) {
 	if err := os.MkdirAll(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"nvim", "git", "node", "npm", "go", "python3", "ruby", "elixir", "ghc", "cabal", "haskell-language-server-wrapper", "rg", "fd", "fzf", "lazygit", "tree-sitter", "unzip", "brew"} {
+	for _, name := range []string{"nvim", "git", "node", "npm", "go", "python3", "ruby", "elixir", "ghc", "cabal", "haskell-language-server-wrapper", "rg", "fd", "fzf", "lazygit", "tree-sitter", "unzip", "luarocks", "timer", "terminal-notifier", "brew"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("placeholder"), 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,13 @@ func doctorFixture(t *testing.T) (*installer, *bytes.Buffer, *bool) {
 		case "xcrun":
 			return "/compiler", nil
 		case "brew":
-			if !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) && !reflect.DeepEqual(args, []string{"doctor", "check_access_directories", "check_exist_directories"}) {
+			metadataArgs := []string{"info", "--json=v2", "--formula"}
+			for _, name := range formulae {
+				if name != timerFormula {
+					metadataArgs = append(metadataArgs, name)
+				}
+			}
+			if !reflect.DeepEqual(args, metadataArgs) && !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) && !reflect.DeepEqual(args, []string{"doctor", "check_access_directories", "check_exist_directories"}) {
 				t.Fatalf("mutating/unexpected Homebrew call: %v", args)
 			}
 			if envValue(env, "HOMEBREW_NO_AUTO_UPDATE") != "1" {

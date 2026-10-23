@@ -2,14 +2,17 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/lukaculjak/mak-cli/cmd/prefill"
 	"github.com/lukaculjak/mak-cli/internal/meetings"
+	"github.com/lukaculjak/mak-cli/internal/productivity"
 	"github.com/lukaculjak/mak-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -60,13 +63,16 @@ func newUninstallCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&purge, "purge", false, "also remove configuration, credentials, browser manifests, and meeting cron jobs")
+	cmd.Flags().BoolVar(&purge, "purge", false, "also remove configuration, credentials, browser manifests, and mak cron jobs")
 	return cmd
 }
 
 func purgeUserData() error {
 	var errs []error
 	if err := meetings.RemoveAllCronJobs(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := productivity.ConfigureReminder(context.Background(), io.Discard, true); err != nil {
 		errs = append(errs, err)
 	}
 	if err := prefill.RemoveHostManifests(); err != nil {

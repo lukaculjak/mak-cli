@@ -54,7 +54,7 @@ func TestGhosttyStandaloneSetupRerunAndRemoval(t *testing.T) {
 		}
 	}
 	r := mustRecord(t, i)
-	if len(r.Paths) != 2 || !f.casks["ghostty"] || !f.casks[ghosttyFont] || f.casks[font] || f.formulae["neovim"] {
+	if len(r.Paths) != 2 || !f.casks["ghostty"] || !f.casks[ghosttyFont] || !f.casks[primaryFont] || f.casks[font] || f.formulae["neovim"] {
 		t.Fatalf("wrong standalone install: %+v %v", r, f.casks)
 	}
 	config, _ := os.ReadFile(filepath.Join(paths[1], "config"))
@@ -79,7 +79,7 @@ func TestGhosttyStandaloneSetupRerunAndRemoval(t *testing.T) {
 	if err := nextInvocation(i, f).uninstall(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if f.casks[ghosttyFont] {
+	if f.casks[ghosttyFont] || f.casks[primaryFont] {
 		t.Fatal("font was not removed by full uninstall")
 	}
 }

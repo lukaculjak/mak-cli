@@ -57,8 +57,8 @@ local ok, failure = xpcall(function()
     vim.wait(100)
     assert(vim.v.errmsg == "", vim.v.errmsg)
     assert(#errors == 0, table.concat(errors, "; "))
-    assert(vim.g.colors_name == "gruvbox", "Gruvbox theme did not load")
-    return "Configuration and Gruvbox theme load successfully"
+    assert(vim.g.colors_name == "duskfox", "Duskfox theme did not load")
+    return "Configuration and Duskfox theme load successfully"
   end, repair) then return end
 
   for _, name in ipairs(vim.fn.sort(vim.tbl_keys(require("lazy.core.config").plugins))) do
@@ -95,6 +95,8 @@ local ok, failure = xpcall(function()
 
   local servers = opts("nvim-lspconfig").servers
   local samples = {
+    clangd = { "cpp", "sample.cpp", "int main() { return 0; }" },
+    tailwindcss = { "html", "tailwind.html", '<div class="flex"></div>' },
     cssls = { "css", "sample.css", "body { color: red; }" },
     html = { "html", "sample.html", "<!doctype html><html></html>" },
     jsonls = { "json", "sample.json", "{}" },

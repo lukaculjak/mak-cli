@@ -41,7 +41,7 @@ func TestDevConfirmationDeclineHasNoSetupEffects(t *testing.T) {
 func TestDevRejectsConflictingActionsAndUnknownPackages(t *testing.T) {
 	for _, args := range [][]string{
 		{"-l", "-i", "node"}, {"--uninstall", "-r", "nvim"}, {"-i", "node", "-r", "node"},
-		{"-i", "unknown"}, {"-r", "unknown"}, {"--install="}, {"--remove="},
+		{"--neorg", "--pomodoro"}, {"--neorg", "--list"}, {"--pomodoro", "--uninstall"}, {"-i", "unknown"}, {"-r", "unknown"}, {"--install="}, {"--remove="},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			cmd := newDevCmd()

@@ -67,6 +67,9 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 			packages = f.casks
 		}
 		for _, p := range args[2:] {
+			if p == timerFormula {
+				p = "timer"
+			}
 			if f.aliases[p] != "" {
 				p = f.aliases[p]
 			}

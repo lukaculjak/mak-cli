@@ -11,6 +11,7 @@ func NewSetupCmd() *cobra.Command {
 
 	cmd.AddCommand(newValidationCmd())
 	cmd.AddCommand(newDevCmd())
+	cmd.AddCommand(newProductivitySetupCmd(true), newProductivitySetupCmd(false))
 
 	return cmd
 }

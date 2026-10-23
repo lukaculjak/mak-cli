@@ -23,6 +23,7 @@ func newDoctorCmd(check func(context.Context, io.Writer) error) *cobra.Command {
 		Long: `Check coding tools on PATH, the bundled Neovim configuration, locked plugins,
 syntax parsers, language-server startup, installation tracking and backups.
 Neovim checks use temporary files with downloads and installation writes blocked.
+Also check local iCloud Drive availability for Neorg sync and backups.
 Print suggested repairs and the current mak version. No repairs run automatically.
 Exit with status 1 when checks fail; warnings alone do not fail the command.`,
 		Args: cobra.NoArgs, SilenceUsage: true,

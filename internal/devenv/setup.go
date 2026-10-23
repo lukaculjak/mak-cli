@@ -24,12 +24,16 @@ import (
 //go:embed assets
 var assets embed.FS
 
-var formulae = []string{"neovim", "git", "node", "go", "python", "ruby", "elixir", "ghc", "cabal-install", "haskell-language-server", "ripgrep", "fd", "fzf", "lazygit", "tree-sitter", "tree-sitter-cli", "unzip"}
+var formulae = []string{"neovim", "git", "node", "go", "python", "ruby", "elixir", "ghc", "cabal-install", "haskell-language-server", "ripgrep", "fd", "fzf", "lazygit", "tree-sitter", "tree-sitter-cli", "unzip", "luarocks", "terminal-notifier", timerFormula}
+
+const timerFormula = "caarlos0/tap/timer"
 
 const font = "font-jetbrains-mono-nerd-font"
 const ghosttyFont = "font-meslo-lg-nerd-font"
 
-var casks = []string{font, "ghostty", ghosttyFont}
+const primaryFont = "font-maple-mono-nf"
+
+var casks = []string{font, "ghostty", ghosttyFont, primaryFont}
 
 type commandRunner func(context.Context, []string, string, ...string) (string, error)
 
@@ -291,14 +295,14 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if err = i.ensureBrewPermissions(ctx); err != nil {
 		return err
 	}
+	names, err := i.installCatalogNames(ctx)
+	if err != nil {
+		return err
+	}
 	if i.beforeFormulae, err = i.inventory(ctx, "--formula"); err != nil {
 		return err
 	}
 	if i.beforeCasks, err = i.inventory(ctx, "--cask"); err != nil {
-		return err
-	}
-	names, err := i.catalogNames(ctx)
-	if err != nil {
 		return err
 	}
 	var resolvedFormulae []string
@@ -555,7 +559,11 @@ func (i *installer) installMissing(ctx context.Context, kind string, names []str
 		if installed[name] {
 			kept = append(kept, name)
 		} else {
-			missing = append(missing, name)
+			if kind == "--formula" && name == "timer" {
+				missing = append(missing, timerFormula)
+			} else {
+				missing = append(missing, name)
+			}
 		}
 	}
 	if len(kept) != 0 {

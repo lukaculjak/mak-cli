@@ -76,5 +76,6 @@ func init() {
 	rootCmd.AddCommand(newUninstallCmd())
 	rootCmd.AddCommand(newDoctorCmd(devenv.Doctor))
 	rootCmd.AddCommand(newShellenvCmd())
+	rootCmd.AddCommand(newSyncCmd(false), newSyncCmd(true), newTimerCmd(false), newTimerCmd(true), newNeorgCmd())
 	configureCompletion(rootCmd)
 }

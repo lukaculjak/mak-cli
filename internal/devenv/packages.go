@@ -31,12 +31,15 @@ func packageCatalog() []packageSpec {
 		"ripgrep": "Fast text search", "fd": "File search", "fzf": "Fuzzy finder",
 		"lazygit": "Terminal Git interface", "tree-sitter": "Tree-sitter parsing library",
 		"tree-sitter-cli": "Tree-sitter parser generator (provides tree-sitter)", "unzip": "Archive extraction",
+		"luarocks":          "Lua dependencies for Neorg",
+		"terminal-notifier": "Pomodoro and journal notifications", "caarlos0/tap/timer": "Terminal Pomodoro timer (alias: timer)",
 	}
 	var result []packageSpec
 	for _, name := range formulae {
 		result = append(result, packageSpec{name: name, description: descriptions[name]})
 	}
 	return append(result,
+		packageSpec{name: primaryFont, description: "Maple Mono NF (primary terminal font)", cask: true},
 		packageSpec{name: font, description: "JetBrains Mono Nerd Font (alias: font)", cask: true},
 		packageSpec{name: "ghostty", description: "Ghostty terminal + Luka's bundled configuration", cask: true},
 		packageSpec{name: ghosttyFont, description: "Meslo LG Nerd Font (Ghostty fallback)", cask: true},
@@ -50,9 +53,16 @@ func PackageName(name string) (string, error) {
 }
 
 func lookupPackage(name string) (packageSpec, error) {
+	// Keep older installation records readable and removable after the iCloud
+	// migration. rclone is no longer part of the default package catalog.
+	if name == "rclone" {
+		return packageSpec{name: "rclone", description: "Legacy optional file transfer utility"}, nil
+	}
 	switch name {
 	case "nvim":
 		name = "neovim"
+	case "timer":
+		name = timerFormula
 	case "font":
 		name = font
 	}
@@ -67,9 +77,17 @@ func lookupPackage(name string) (packageSpec, error) {
 // Homebrew aliases such as python resolve to versioned formula names. Use
 // Homebrew's metadata rather than guessing a version from installed directories.
 func (i *installer) catalogNames(ctx context.Context) (map[string]string, error) {
-	b, err := i.run(ctx, i.env, i.brew, append([]string{"info", "--json=v2", "--formula"}, formulae...)...)
+	// Timer has a fixed name in a third-party tap. Do not require the tap to be
+	// present for read-only listing or installs of unrelated packages.
+	var metadata []string
+	for _, name := range formulae {
+		if name != timerFormula {
+			metadata = append(metadata, name)
+		}
+	}
+	b, err := i.run(ctx, i.env, i.brew, append([]string{"info", "--json=v2", "--formula"}, metadata...)...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading Homebrew package metadata: %w", err)
 	}
 	var info struct {
 		Formulae []struct {
@@ -81,11 +99,14 @@ func (i *installer) catalogNames(ctx context.Context) (map[string]string, error)
 	if err := json.Unmarshal([]byte(b), &info); err != nil {
 		return nil, fmt.Errorf("reading Homebrew package names: %w", err)
 	}
-	names := map[string]string{}
+	names := map[string]string{timerFormula: "timer", "rclone": "rclone"}
 	for _, name := range casks {
 		names[name] = name
 	}
 	for _, name := range formulae {
+		if name == timerFormula {
+			continue
+		}
 		for _, f := range info.Formulae {
 			if f.Name == name || slices.Contains(f.Aliases, name) || slices.Contains(f.OldNames, name) {
 				names[name] = f.Name
@@ -95,6 +116,27 @@ func (i *installer) catalogNames(ctx context.Context) (map[string]string, error)
 		if names[name] == "" {
 			return nil, fmt.Errorf("Homebrew did not resolve %s", name)
 		}
+	}
+	return names, nil
+}
+
+// Refresh an incompatible Homebrew client before taking package snapshots.
+// Read-only listing and diagnostics continue to use catalogNames directly.
+func (i *installer) installCatalogNames(ctx context.Context) (map[string]string, error) {
+	names, err := i.catalogNames(ctx)
+	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "unknown or unsupported macOS version:") {
+		return names, err
+	}
+	if err := i.ensureBrewPermissions(ctx); err != nil {
+		return nil, err
+	}
+	ui.Step(i.out, "Homebrew could not read macOS requirements; updating Homebrew and retrying...")
+	if _, err := i.run(ctx, i.env, i.brew, "update"); err != nil {
+		return nil, fmt.Errorf("updating Homebrew: %w; run brew update as your normal user, then retry mak setup dev", err)
+	}
+	names, err = i.catalogNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w; Homebrew still cannot read package metadata after updating. Run brew update again, then brew config and sw_vers to diagnose before retrying mak setup dev", err)
 	}
 	return names, nil
 }
@@ -173,7 +215,7 @@ func (i *installer) listPackages(ctx context.Context) error {
 		ui.Check(i.out, installed, "%-34s %s%s", p.name, p.description, status)
 	}
 	fmt.Fprintln(i.out, "\nNeovim's checkbox shows the application, not whether the full LazyVim setup is complete.")
-	fmt.Fprintln(i.out, "--install neovim (or nvim) installs the full environment. Ghostty includes its configuration and Meslo font; other names install only that package and its dependencies.")
+	fmt.Fprintln(i.out, "--install neovim (or nvim) installs the full environment. Ghostty includes its configuration, Maple Mono NF and Meslo fallback; other names install only that package and its dependencies.")
 	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites. Software installed outside Homebrew is not detected.")
 	return nil
 }
@@ -235,14 +277,14 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	i.env = setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_UPGRADE", "1")
 	i.env = setEnv(i.env, "HOMEBREW_NO_INSTALL_CLEANUP", "1")
+	names, err := i.installCatalogNames(ctx)
+	if err != nil {
+		return err
+	}
 	if i.beforeFormulae, err = i.inventory(ctx, "--formula"); err != nil {
 		return err
 	}
 	if i.beforeCasks, err = i.inventory(ctx, "--cask"); err != nil {
-		return err
-	}
-	names, err := i.catalogNames(ctx)
-	if err != nil {
 		return err
 	}
 	name := names[p.name]
@@ -270,7 +312,7 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	ui.Step(i.out, "Installing %s and its dependencies...", p.name)
 	packages := []string{name}
 	if p.name == "ghostty" {
-		packages = append(packages, ghosttyFont)
+		packages = append(packages, ghosttyFont, primaryFont)
 	}
 	if err := i.installMissing(ctx, kind, packages, before); err != nil {
 		return fmt.Errorf("installing %s: %w", p.name, err)
