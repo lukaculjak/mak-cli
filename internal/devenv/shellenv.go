@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 // Shellenv prints code for the caller to evaluate in its current zsh/bash shell.
@@ -53,8 +56,7 @@ func (i *installer) shellenv(ctx context.Context, out io.Writer) error {
 func brewFallbackPath(prefix, original string) string {
 	var tools, paths []string
 	managed := make(map[string]bool)
-	for _, rel := range []string{"opt/ruby/bin", "opt/python/libexec/bin", "bin", "sbin"} {
-		path := filepath.Join(prefix, rel)
+	for _, path := range brewToolDirs(prefix) {
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
 			tools = append(tools, path)
 			managed[path] = true
@@ -77,4 +79,21 @@ func brewFallbackPath(prefix, original string) string {
 		paths = append(paths, tools...)
 	}
 	return strings.Join(paths, string(os.PathListSeparator))
+}
+
+func brewToolDirs(prefix string) []string {
+	paths := []string{filepath.Join(prefix, "opt/ruby/bin"), filepath.Join(prefix, "opt/python/bin"), filepath.Join(prefix, "opt/python/libexec/bin")}
+	// A versioned Homebrew Python can provide python3 without being linked into
+	// brew's bin directory. Prefer the newest installed version as a fallback.
+	versioned, _ := filepath.Glob(filepath.Join(prefix, "opt/python@*/bin"))
+	version := func(path string) string {
+		return "v" + strings.TrimPrefix(filepath.Base(filepath.Dir(path)), "python@")
+	}
+	slices.SortFunc(versioned, func(a, b string) int { return semver.Compare(version(b), version(a)) })
+	for _, path := range versioned {
+		if semver.IsValid(version(path)) && executable(path, "python3") != "" {
+			paths = append(paths, path)
+		}
+	}
+	return append(paths, filepath.Join(prefix, "bin"), filepath.Join(prefix, "sbin"))
 }

@@ -92,7 +92,7 @@ func TestBundledOptionsKeepVersionManagerPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := `vim.env.PATH = "/test-brew/bin:/project/nvm/bin:/project/rbenv/shims:/usr/bin:/bin"` + "\n" + string(options) + `
-assert(vim.env.PATH == "/project/nvm/bin:/project/rbenv/shims:/test-brew/opt/ruby/bin:/test-brew/opt/python/libexec/bin:/test-brew/bin:/test-brew/sbin:/usr/bin:/bin", vim.env.PATH)
+assert(vim.env.PATH == "/project/nvm/bin:/project/rbenv/shims:/test-brew/opt/ruby/bin:/test-brew/opt/python/bin:/test-brew/opt/python/libexec/bin:/test-brew/bin:/test-brew/sbin:/usr/bin:/bin", vim.env.PATH)
 vim.cmd("qa!")
 `
 	path := filepath.Join(root, "options-test.lua")

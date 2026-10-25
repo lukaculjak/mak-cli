@@ -306,6 +306,15 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if i.beforeCasks, err = i.inventory(ctx, "--cask"); err != nil {
 		return err
 	}
+	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
+	if err != nil {
+		return err
+	}
+	prefix = strings.TrimSpace(prefix)
+	if !filepath.IsAbs(prefix) || strings.ContainsAny(prefix, "\r\n") {
+		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
+	}
+	i.env = setEnv(i.env, "PATH", brewFallbackPath(prefix, envValue(i.env, "PATH")))
 	if err = i.beginSetupJournal(true); err != nil {
 		return err
 	}
@@ -316,16 +325,13 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if err = i.installMissing(ctx, "--cask", casks, names, i.beforeCasks); err != nil {
 		return fmt.Errorf("installing Ghostty and Nerd Fonts: %w", err)
 	}
-	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
-	if err != nil {
-		return err
-	}
-	prefix = strings.TrimSpace(prefix)
-	if !filepath.IsAbs(prefix) || strings.ContainsAny(prefix, "\r\n") {
-		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
-	}
+	// Include any versioned runtime directories introduced by this installation.
 	i.env = setEnv(i.env, "PATH", brewFallbackPath(prefix, envValue(i.env, "PATH")))
 	i.stage(3, "Backing up Neovim and Ghostty and preparing configurations...")
+	ui.Step(i.out, "Checking Python runtime for Mason tools...")
+	if _, err = i.run(ctx, i.env, i.toolPath(prefix, "python3"), "-B", "-c", "import sys, venv, ensurepip; assert sys.version_info >= (3, 10), 'Python 3.10 or newer is required for debugpy'"); err != nil {
+		return fmt.Errorf("Python runtime cannot install Mason tools; activate Python 3.10 or newer with venv and pip support, then retry: %w", err)
+	}
 	// Homebrew's tree-sitter formula supplies only the library. Require the CLI
 	// before LazyVim can attempt competing Mason installs during plugin startup.
 	ui.Step(i.out, "Checking Tree-sitter CLI...")

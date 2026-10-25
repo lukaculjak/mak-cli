@@ -46,11 +46,12 @@ local function install_tools()
       packages[assert(mapping[name], "No Mason package for LSP: " .. name)] = true
     end
   end
+  local handles = {}
   for _, name in ipairs(vim.tbl_keys(packages)) do
     local package = registry.get_package(name)
     if not package:is_installed() and not package:is_installing() then
       print("Installing Mason tool: " .. name)
-      package:install()
+      handles[name] = package:install()
     end
   end
   assert(vim.wait(900000, function()
@@ -60,7 +61,12 @@ local function install_tools()
     return true
   end, 100), "Mason language server installation timed out")
   for name in pairs(packages) do
-    assert(registry.get_package(name):is_installed(), "Mason failed to install " .. name .. log_tail("mason.log"))
+    if not registry.get_package(name):is_installed() then
+      local handle = handles[name]
+      local buffers = handle and handle.stdio_sink.buffers
+      local detail = buffers and (table.concat(buffers.stdout) .. table.concat(buffers.stderr)) or log_tail("mason.log")
+      error("Mason failed to install " .. name .. "\n" .. detail:sub(-6000))
+    end
   end
 
   local parsers = plugin_opts("nvim-treesitter").ensure_installed

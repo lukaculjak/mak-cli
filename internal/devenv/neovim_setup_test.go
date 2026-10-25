@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +38,8 @@ local tool = {
     assert(vim.env.MAK_NVIM_PHASE == "tools", "Mason installed a package outside the tools phase")
     assert(not installing, "Package is already installing.")
     calls, installing = calls + 1, true
-    vim.defer_fn(function() installed, installing = true, false end, 20)
+    vim.defer_fn(function() installed, installing = vim.env.MAK_TEST_MASON_FAIL ~= "1", false end, 20)
+    return { stdio_sink = { buffers = { stdout = { "Creating virtual environment\n" }, stderr = { "debugpy requires Python 3.10 or newer\n" } } } }
   end,
 }
 package.preload["mason"] = function() return { setup = function(opts)
@@ -104,8 +106,15 @@ return {
 			t.Fatal(err)
 		}
 	}
-	for _, phase := range []string{"plugins", "tools"} {
-		t.Run(phase, func(t *testing.T) {
+	for _, mode := range []string{"plugins", "tools", "failed tool"} {
+		t.Run(mode, func(t *testing.T) {
+			phase, fail := mode, "0"
+			if mode == "failed tool" {
+				phase, fail = "tools", "1"
+			}
+			if err := os.Remove(filepath.Join(config, ".mak-"+phase+"-ok")); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, nvim, "--headless", "-u", "NONE", "-i", "NONE", "-S", filepath.Join(root, "setup.lua"))
@@ -113,11 +122,21 @@ return {
 			for key, value := range map[string]string{
 				"HOME": root, "XDG_CONFIG_HOME": filepath.Join(root, "config"), "XDG_DATA_HOME": filepath.Join(root, "data"),
 				"XDG_STATE_HOME": filepath.Join(root, "state"), "XDG_CACHE_HOME": filepath.Join(root, "cache"),
-				"NVIM_APPNAME": "nvim", "NVIM_LOG_FILE": filepath.Join(root, "nvim.log"), "MAK_NVIM_CONFIG": config, "MAK_NVIM_PHASE": phase,
+				"NVIM_APPNAME": "nvim", "NVIM_LOG_FILE": filepath.Join(root, "nvim.log"), "MAK_NVIM_CONFIG": config, "MAK_NVIM_PHASE": phase, "MAK_TEST_MASON_FAIL": fail,
 			} {
 				cmd.Env = setEnv(cmd.Env, key, value)
 			}
-			if output, err := cmd.CombinedOutput(); err != nil {
+			output, err := cmd.CombinedOutput()
+			if fail == "1" {
+				if err == nil || !strings.Contains(string(output), "Mason failed to install debugpy") || !strings.Contains(string(output), "debugpy requires Python 3.10 or newer") {
+					t.Fatalf("missing package-specific failure: %v: %s", err, output)
+				}
+				if _, err := os.Stat(filepath.Join(config, ".mak-"+phase+"-ok")); !os.IsNotExist(err) {
+					t.Fatal("failed installation created a success marker")
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("%v\n%s", err, output)
 			}
 			if _, err := os.Stat(filepath.Join(config, ".mak-"+phase+"-ok")); err != nil {

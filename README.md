@@ -94,6 +94,10 @@ and npm, are skipped only when all are available. Ghostty is also detected in
 Homebrew because they have no executable. Homebrew may still install dependencies
 required by a missing package. Existing Homebrew packages are skipped, including
 versioned aliases such as Python.
+Versioned Homebrew Python installations are added as fallbacks when `python3`
+is not linked into Homebrew's main bin directory. Setup requires Python 3.10 or
+newer with `venv` and `ensurepip` for Mason's Python tools and checks this before
+replacing Neovim or Ghostty files. Project and version-manager paths retain priority.
 Homebrew's `tree-sitter` package provides the library; `tree-sitter-cli` provides
 the executable required by LazyVim. Setup installs both and checks the CLI before
 replacing Neovim files or starting plugin installation.
