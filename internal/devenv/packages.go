@@ -188,9 +188,9 @@ func (i *installer) listPackages(ctx context.Context) error {
 			return err
 		}
 	} else {
-		fmt.Fprintln(i.out, "Homebrew is not installed; none of these Homebrew packages are installed.")
+		fmt.Fprintln(i.out, "Homebrew is not installed; checking existing executables.")
 	}
-	ui.Heading(i.out, "Available coding software (Homebrew status)")
+	ui.Heading(i.out, "Available coding software (Homebrew and existing executables)")
 	fmt.Fprintln(i.out, "[x] installed  [ ] not installed; ownership is shown separately.")
 	for _, p := range packageCatalog() {
 		name := names[p.name]
@@ -204,8 +204,15 @@ func (i *installer) listPackages(ctx context.Context) error {
 			owned = r != nil && r.Brew == i.brew && slices.Contains(r.Casks, name)
 		}
 		status := ""
+		if !installed {
+			if path := i.availablePackage(p.name); path != "" {
+				installed = true
+				owned = false
+				status = " (existing: " + path + ")"
+			}
+		}
 		if name != "" && name != p.name {
-			status = " (" + name + ")"
+			status += " (" + name + ")"
 		}
 		if owned {
 			status += " (tracked by mak)"
@@ -216,7 +223,7 @@ func (i *installer) listPackages(ctx context.Context) error {
 	}
 	fmt.Fprintln(i.out, "\nNeovim's checkbox shows the application, not whether the full LazyVim setup is complete.")
 	fmt.Fprintln(i.out, "--install neovim (or nvim) installs the full environment. Ghostty includes its configuration, Maple Mono NF and Meslo fallback; other names install only that package and its dependencies.")
-	fmt.Fprintln(i.out, "Homebrew and Apple developer tools are shared prerequisites. Software installed outside Homebrew is not detected.")
+	fmt.Fprintln(i.out, "Existing executables and Ghostty applications are reused. Fonts and libraries are checked through Homebrew. External software is never claimed by mak.")
 	return nil
 }
 
@@ -255,6 +262,12 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 	if p.name == "ghostty" && r != nil {
 		if err := i.checkPaths(r); err != nil {
 			return err
+		}
+	}
+	if p.name != "ghostty" {
+		if path := i.availablePackage(p.name); path != "" {
+			ui.Success(i.out, "%s is already available at %s; leaving it as is.", p.name, path)
+			return nil
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
@@ -310,18 +323,18 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 		return err
 	}
 	ui.Step(i.out, "Installing %s and its dependencies...", p.name)
-	packages := []string{name}
+	packages := []string{p.name}
 	if p.name == "ghostty" {
 		packages = append(packages, ghosttyFont, primaryFont)
 	}
-	if err := i.installMissing(ctx, kind, packages, before); err != nil {
+	if err := i.installMissing(ctx, kind, packages, names, before); err != nil {
 		return fmt.Errorf("installing %s: %w", p.name, err)
 	}
 	installed, err := i.inventory(ctx, kind)
 	if err != nil {
 		return err
 	}
-	if !installed[name] {
+	if !installed[name] && i.availablePackage(p.name) == "" {
 		return fmt.Errorf("Homebrew did not install %s", name)
 	}
 	if p.name == "ghostty" {

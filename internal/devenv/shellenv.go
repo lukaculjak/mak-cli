@@ -45,6 +45,12 @@ func (i *installer) shellenv(ctx context.Context, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	quotedPath := "'" + strings.ReplaceAll(brewFallbackPath(prefix, envValue(i.env, "PATH")), "'", "'\\''") + "'"
+	_, err = fmt.Fprintf(out, "%s\nexport PATH=%s\nhash -r\n", strings.TrimRight(brewEnv, "\n"), quotedPath)
+	return err
+}
+
+func brewFallbackPath(prefix, original string) string {
 	var tools, paths []string
 	managed := make(map[string]bool)
 	for _, rel := range []string{"opt/ruby/bin", "opt/python/libexec/bin", "bin", "sbin"} {
@@ -55,7 +61,7 @@ func (i *installer) shellenv(ctx context.Context, out io.Writer) error {
 		}
 	}
 	inserted := false
-	for _, path := range strings.Split(envValue(i.env, "PATH"), string(os.PathListSeparator)) {
+	for _, path := range strings.Split(original, string(os.PathListSeparator)) {
 		if managed[path] {
 			continue
 		}
@@ -70,7 +76,5 @@ func (i *installer) shellenv(ctx context.Context, out io.Writer) error {
 	if !inserted {
 		paths = append(paths, tools...)
 	}
-	quotedPath := "'" + strings.ReplaceAll(strings.Join(paths, string(os.PathListSeparator)), "'", "'\\''") + "'"
-	_, err = fmt.Fprintf(out, "%s\nexport PATH=%s\nhash -r\n", strings.TrimRight(brewEnv, "\n"), quotedPath)
-	return err
+	return strings.Join(paths, string(os.PathListSeparator))
 }

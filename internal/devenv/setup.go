@@ -39,6 +39,7 @@ type commandRunner func(context.Context, []string, string, ...string) (string, e
 
 type installer struct {
 	home                        string
+	applications                string
 	in                          io.Reader
 	env                         []string
 	run                         commandRunner
@@ -305,18 +306,14 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if i.beforeCasks, err = i.inventory(ctx, "--cask"); err != nil {
 		return err
 	}
-	var resolvedFormulae []string
-	for _, name := range formulae {
-		resolvedFormulae = append(resolvedFormulae, names[name])
-	}
 	if err = i.beginSetupJournal(true); err != nil {
 		return err
 	}
 	i.stage(2, "Installing coding tools, Ghostty and Nerd Fonts...")
-	if err = i.installMissing(ctx, "--formula", resolvedFormulae, i.beforeFormulae); err != nil {
+	if err = i.installMissing(ctx, "--formula", formulae, names, i.beforeFormulae); err != nil {
 		return fmt.Errorf("installing coding tools: %w", err)
 	}
-	if err = i.installMissing(ctx, "--cask", casks, i.beforeCasks); err != nil {
+	if err = i.installMissing(ctx, "--cask", casks, names, i.beforeCasks); err != nil {
 		return fmt.Errorf("installing Ghostty and Nerd Fonts: %w", err)
 	}
 	prefix, err := i.run(ctx, i.env, i.brew, "--prefix")
@@ -327,12 +324,12 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if !filepath.IsAbs(prefix) || strings.ContainsAny(prefix, "\r\n") {
 		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
 	}
-	i.env = setEnv(i.env, "PATH", strings.Join([]string{filepath.Join(prefix, "opt/ruby/bin"), filepath.Join(prefix, "opt/python/libexec/bin"), filepath.Join(prefix, "bin"), filepath.Join(prefix, "sbin"), envValue(i.env, "PATH")}, string(os.PathListSeparator)))
+	i.env = setEnv(i.env, "PATH", brewFallbackPath(prefix, envValue(i.env, "PATH")))
 	i.stage(3, "Backing up Neovim and Ghostty and preparing configurations...")
 	// Homebrew's tree-sitter formula supplies only the library. Require the CLI
 	// before LazyVim can attempt competing Mason installs during plugin startup.
 	ui.Step(i.out, "Checking Tree-sitter CLI...")
-	if _, err = i.run(ctx, i.env, filepath.Join(prefix, "bin/tree-sitter"), "--version"); err != nil {
+	if _, err = i.run(ctx, i.env, i.toolPath(prefix, "tree-sitter"), "--version"); err != nil {
 		return fmt.Errorf("Tree-sitter CLI could not run; install it with mak setup dev --install tree-sitter-cli and retry: %w", err)
 	}
 	for n := range i.paths {
@@ -366,7 +363,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 			return err
 		}
 		ui.Step(i.out, "Bootstrapping %s at %s...", plugin.name, lockfile[plugin.name].Commit)
-		git := filepath.Join(prefix, "bin/git")
+		git := i.toolPath(prefix, "git")
 		if _, err = i.run(ctx, i.env, git, "clone", "--filter=blob:none", "--no-checkout", plugin.repo, target); err != nil {
 			return err
 		}
@@ -398,7 +395,7 @@ func (i *installer) setup(ctx context.Context) (err error) {
 		i.env = setEnv(i.env, "MAK_NVIM_PHASE", phase.name)
 		marker := filepath.Join(config, ".mak-"+phase.name+"-ok")
 		// Use editor startup: -l script mode can exit during asynchronous plugin work.
-		if _, err = i.run(ctx, i.env, filepath.Join(prefix, "bin/nvim"), "--headless", "-u", "NONE", "-i", "NONE", "-S", script.Name()); err != nil {
+		if _, err = i.run(ctx, i.env, i.toolPath(prefix, "nvim"), "--headless", "-u", "NONE", "-i", "NONE", "-S", script.Name()); err != nil {
 			return fmt.Errorf("Neovim %s phase: %w", phase.name, err)
 		}
 		if _, err = os.Stat(marker); err != nil {
@@ -553,11 +550,17 @@ func (i *installer) checkBrewPermissions(ctx context.Context) error {
 	return nil
 }
 
-func (i *installer) installMissing(ctx context.Context, kind string, names []string, installed map[string]bool) error {
+func (i *installer) installMissing(ctx context.Context, kind string, requested []string, names map[string]string, installed map[string]bool) error {
 	var missing, kept []string
-	for _, name := range names {
+	for _, pkg := range requested {
+		name := names[pkg]
+		if name == "" {
+			name = pkg
+		}
 		if installed[name] {
 			kept = append(kept, name)
+		} else if path := i.availablePackage(pkg); path != "" {
+			ui.Step(i.out, "Keeping existing %s: %s (not installed or owned by mak)", pkg, path)
 		} else {
 			if kind == "--formula" && name == "timer" {
 				missing = append(missing, timerFormula)

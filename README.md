@@ -86,8 +86,14 @@ access, setup stops before changing Neovim or Ghostty files. Run
 and follow the reported directory repairs if this account should manage Homebrew.
 Do not run mak or brew with sudo. Permission repair may need sudo for the specific
 directories Homebrew identifies; mak does not change shared-directory ownership.
-Packages already installed via Homebrew are skipped, including versioned aliases
-such as Python, and remain outside mak's newly installed package ownership.
+Before installing a package, mak checks Homebrew and the commands on your `PATH`.
+Existing tools from nvm, rbenv, GHCup, or other installers are reused without
+claiming ownership. Packages with multiple required commands, such as Node.js
+and npm, are skipped only when all are available. Ghostty is also detected in
+`/Applications` and `~/Applications`. Fonts and libraries are checked through
+Homebrew because they have no executable. Homebrew may still install dependencies
+required by a missing package. Existing Homebrew packages are skipped, including
+versioned aliases such as Python.
 Homebrew's `tree-sitter` package provides the library; `tree-sitter-cli` provides
 the executable required by LazyVim. Setup installs both and checks the CLI before
 replacing Neovim files or starting plugin installation.
@@ -210,13 +216,13 @@ Preview all offered software without installing anything:
 mak setup dev --list  # or -l
 ```
 
-The checklist uses a green `[x]` for installed Homebrew packages and a red `[ ]`
+The checklist uses a green `[x]` for available software and a red `[ ]`
 for missing packages, with orange headings. It shows both preexisting software
 and software installed by mak; `(tracked by mak)` indicates removable ownership.
 Colors follow the normal `NO_COLOR`, terminal, and redirected-output rules.
 Neovim's checkbox indicates whether the application is installed, not whether
-the LazyVim environment has been fully configured. Software installed outside
-Homebrew is not detected. Homebrew aliases such as Python's versioned formula
+the LazyVim environment has been fully configured. External executables show
+their detected paths and are not tracked by mak. Homebrew aliases such as Python's versioned formula
 name are resolved and recorded so the correct package is listed and removed.
 
 Manage one offered package by the name printed in the list:

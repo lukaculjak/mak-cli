@@ -102,7 +102,7 @@ func (f *fakeSystem) run(ctx context.Context, env []string, program string, args
 		return "", errors.New("simulated failure: " + call)
 	}
 	if filepath.Base(program) == "tree-sitter" {
-		if !f.formulae["tree-sitter-cli"] {
+		if !f.formulae["tree-sitter-cli"] && executable(envValue(env, "PATH"), "tree-sitter") == "" {
 			return "", errors.New("Tree-sitter library does not provide the CLI")
 		}
 		return "tree-sitter 0.27.0", nil
@@ -125,7 +125,8 @@ func mapKeys(m map[string]bool) []string {
 func testInstaller(t *testing.T) (*installer, *fakeSystem) {
 	t.Helper()
 	f := &fakeSystem{formulae: map[string]bool{"git": true, "shared-dependency": true}, casks: map[string]bool{"existing-app": true}}
-	i := &installer{home: t.TempDir(), env: []string{"SHELL=/bin/zsh", "PATH=/usr/bin:/bin"}, brew: "/fake/brew/bin/brew", run: f.run, out: io.Discard}
+	home := t.TempDir()
+	i := &installer{home: home, applications: filepath.Join(home, "Applications"), env: []string{"SHELL=/bin/zsh", "PATH=" + filepath.Join(home, "bin")}, brew: "/fake/brew/bin/brew", run: f.run, out: io.Discard}
 	return i, f
 }
 

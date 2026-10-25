@@ -13,7 +13,7 @@ import (
 )
 
 func nextInvocation(i *installer, f *fakeSystem) *installer {
-	return &installer{home: i.home, env: i.env, brew: i.brew, run: f.run, out: io.Discard}
+	return &installer{home: i.home, applications: i.applications, env: i.env, brew: i.brew, run: f.run, out: io.Discard}
 }
 
 func assertOriginals(t *testing.T, paths []string) {

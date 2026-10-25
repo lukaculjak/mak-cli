@@ -149,6 +149,8 @@ func (i *installer) doctor(ctx context.Context) error {
 			for _, pkg := range []string{"ghostty", ghosttyFont, primaryFont} {
 				if installedCasks[pkg] {
 					r.add("ok", "Homebrew: "+pkg, "Installed", "")
+				} else if path := i.availablePackage(pkg); path != "" {
+					r.add("ok", "Existing software: "+pkg, path+" (not managed by Homebrew)", "")
 				} else {
 					r.add("warning", "Homebrew: "+pkg, "Not installed via Homebrew", "mak setup dev --install "+pkg)
 				}
@@ -196,12 +198,13 @@ func (i *installer) doctor(ctx context.Context) error {
 			r.add("ok", "Recovery files", "Managed directories and original backups are intact", "")
 		}
 	}
-	configOK, changed, err := bundledConfigStatus(i.paths[0].path)
+	missing, changed, err := bundledConfigStatus(i.paths[0].path)
 	if err != nil {
 		return err
 	}
+	configOK := len(missing) == 0
 	if !configOK {
-		r.add("error", "Bundled Neovim files", "Required configuration files are missing or unreadable at "+i.paths[0].path, "mak setup dev (backs up and replaces the current environment)")
+		r.add("error", "Bundled Neovim files", "Missing or unreadable at "+i.paths[0].path+": "+strings.Join(missing, ", "), "mak setup dev (backs up and replaces the current environment)")
 	} else if len(changed) != 0 {
 		r.add("warning", "Bundled Neovim files", "Local edits in "+strings.Join(changed, ", "), "To restore bundled defaults: mak setup dev (backs up local edits)")
 	} else {
@@ -252,9 +255,8 @@ func (i *installer) doctor(ctx context.Context) error {
 	return nil
 }
 
-func bundledConfigStatus(config string) (bool, []string, error) {
-	complete := true
-	var changed []string
+func bundledConfigStatus(config string) ([]string, []string, error) {
+	var missing, changed []string
 	err := fs.WalkDir(assets, "assets/nvim", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
@@ -262,7 +264,7 @@ func bundledConfigStatus(config string) (bool, []string, error) {
 		rel, _ := filepath.Rel("assets/nvim", path)
 		actual, err := os.ReadFile(filepath.Join(config, rel))
 		if err != nil {
-			complete = false
+			missing = append(missing, rel)
 			return nil
 		}
 		expected, _ := assets.ReadFile(path)
@@ -271,7 +273,7 @@ func bundledConfigStatus(config string) (bool, []string, error) {
 		}
 		return nil
 	})
-	return complete, changed, err
+	return missing, changed, err
 }
 
 func (i *installer) doctorNeovim(ctx context.Context, r *healthReport) {
@@ -304,10 +306,6 @@ func (i *installer) doctorNeovim(ctx context.Context, r *healthReport) {
 		r.add("error", "Neovim configuration snapshot", err.Error(), "Correct access to the Neovim configuration and rerun mak doctor")
 		return
 	}
-	if err := os.MkdirAll(filepath.Join(tmp, "home"), 0o700); err != nil {
-		r.add("error", "Temporary diagnostics", err.Error(), "Check TMPDIR permissions and available disk space")
-		return
-	}
 	if err := i.copyMixCaches(tmp); err != nil {
 		r.add("error", "Elixir diagnostics cache", err.Error(), "Correct access to the existing Mix cache and rerun mak doctor")
 		return
@@ -322,7 +320,9 @@ func (i *installer) doctorNeovim(ctx context.Context, r *healthReport) {
 	env := i.env
 	for key, value := range map[string]string{
 		"NVIM_APPNAME": "nvim",
-		"HOME":         filepath.Join(tmp, "home"), "XDG_CONFIG_HOME": filepath.Join(tmp, "config"), "XDG_STATE_HOME": filepath.Join(tmp, "state"), "XDG_CACHE_HOME": filepath.Join(tmp, "cache"),
+		// Custom LSP commands and version managers resolve ~ relative to HOME.
+		// Keep those paths valid; sandbox-exec blocks writes outside tmp.
+		"HOME": i.home, "XDG_CONFIG_HOME": filepath.Join(tmp, "config"), "XDG_STATE_HOME": filepath.Join(tmp, "state"), "XDG_CACHE_HOME": filepath.Join(tmp, "cache"),
 		"TMPDIR": tmp, "GOCACHE": filepath.Join(tmp, "go-cache"), "GOMODCACHE": filepath.Join(tmp, "go-mod-cache"), "GOTELEMETRY": "off",
 		"MIX_HOME": filepath.Join(tmp, "mix-home"), "MIX_INSTALL_DIR": filepath.Join(tmp, "mix-installs"),
 		// The private cache is used by one process; Mix's TCP lock is unnecessary

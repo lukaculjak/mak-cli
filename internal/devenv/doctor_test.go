@@ -59,7 +59,10 @@ func doctorFixture(t *testing.T) (*installer, *bytes.Buffer, *bool) {
 			return f.run(ctx, env, program, args...)
 		case "sandbox-exec":
 			started = true
-			for _, key := range []string{"HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "MIX_HOME", "MIX_INSTALL_DIR"} {
+			if envValue(env, "HOME") != i.home {
+				t.Fatal("doctor redirected custom home-relative LSP and version-manager paths")
+			}
+			for _, key := range []string{"XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "MIX_HOME", "MIX_INSTALL_DIR"} {
 				if strings.HasPrefix(envValue(env, key), i.home+string(os.PathSeparator)) {
 					t.Fatalf("diagnostics reused original %s", key)
 				}
@@ -145,6 +148,26 @@ func TestDoctorMissingToolsAndRecoveryFiles(t *testing.T) {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("missing %q: %s", text, out.String())
 		}
+	}
+}
+
+func TestDoctorNamesMissingConfigurationFiles(t *testing.T) {
+	i, out, started := doctorFixture(t)
+	for _, name := range []string{"debug.lua", "web.lua"} {
+		if err := os.Remove(filepath.Join(i.paths[0].path, "lua", "plugins", name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := i.doctor(context.Background()); !errors.Is(err, ErrUnhealthy) {
+		t.Fatalf("expected missing configuration error, got %v", err)
+	}
+	for _, name := range []string{"lua/plugins/debug.lua", "lua/plugins/web.lua"} {
+		if !strings.Contains(out.String(), name) {
+			t.Fatal("missing file not named:", out.String())
+		}
+	}
+	if *started {
+		t.Fatal("started runtime checks with missing configuration")
 	}
 }
 

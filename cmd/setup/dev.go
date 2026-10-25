@@ -24,7 +24,8 @@ Use --neorg or --pomodoro to install only that feature.
 Full setup schedules a weekday Neorg journal reminder at 09:17 local time.
 The installation confirmation defaults to yes when you press Enter; --yes skips it.
 Homebrew permission repair requires a separate explicit yes, even with --yes.
-Use --list (-l) to preview software and Homebrew installation status.
+Existing executables are reused, including tools installed outside Homebrew.
+Use --list (-l) to preview software availability and mak ownership.
 Use --install (-i) PACKAGE or --remove (-r) PACKAGE to manage one tracked package.
 Installing neovim (alias: nvim) runs the full LazyVim environment setup.
 Installing ghostty includes Luka's configuration, Maple Mono NF and a Meslo fallback.
@@ -93,7 +94,7 @@ Homebrew, Apple developer tools, and packages needed by other tools are retained
 		},
 	}
 	cmd.Flags().BoolVar(&uninstall, "uninstall", false, "remove the tracked coding environment and restore previous Neovim and Ghostty files")
-	cmd.Flags().BoolVarP(&list, "list", "l", false, "list available packages, their Homebrew status and mak ownership")
+	cmd.Flags().BoolVarP(&list, "list", "l", false, "list available packages, detected installations and mak ownership")
 	cmd.Flags().StringVarP(&install, "install", "i", "", "install a package; neovim/nvim installs the full LazyVim environment")
 	cmd.Flags().StringVarP(&remove, "remove", "r", "", "remove one package tracked by mak (e.g. --remove neovim)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "confirm the full environment or Ghostty installation without a prompt")
