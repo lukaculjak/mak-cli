@@ -325,8 +325,16 @@ package.preload["lazy"] = function()
     restore = function() assert(finished, "Restore ran before installation completed") end,
   }
 end
+return package.preload["lazy"]()
 `
-				if err := os.WriteFile(filepath.Join(envValue(env, "MAK_NVIM_CONFIG"), "init.lua"), []byte(init), 0600); err != nil {
+				lazy := filepath.Join(envValue(env, "XDG_DATA_HOME"), "nvim", "lazy", "lazy.nvim", "lua")
+				if err := os.MkdirAll(lazy, 0700); err != nil {
+					return "", err
+				}
+				if err := os.WriteFile(filepath.Join(lazy, "lazy.lua"), []byte(init), 0600); err != nil {
+					return "", err
+				}
+				if err := os.WriteFile(filepath.Join(envValue(env, "MAK_NVIM_CONFIG"), "init.lua"), []byte("require('lazy')"), 0600); err != nil {
 					return "", err
 				}
 				return runner(nil, io.Discard, nil)(ctx, env, nvim, args...)

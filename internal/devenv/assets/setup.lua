@@ -173,6 +173,23 @@ local ok, err = xpcall(function()
   local locked = vim.json.decode(table.concat(vim.fn.readfile(config .. "/lazy-lock.json"), "\n"))
   vim.cmd.cd(config)
   vim.opt.rtp:prepend(config)
+  vim.opt.rtp:prepend(vim.fn.stdpath("data") .. "/lazy/lazy.nvim")
+  local lazy = require("lazy")
+  local setup = lazy.setup
+  lazy.setup = function(settings)
+    -- Leave tool installation and waiting to mak's tools phase.
+    -- LazyVim's startup refresh and :MasonUpdate can otherwise install the same
+    -- package concurrently in a fresh environment.
+    vim.list_extend(settings.spec, {
+      { "mason-org/mason.nvim", build = false, config = function(_, options)
+        require("mason").setup(options)
+      end },
+      { "nvim-treesitter/nvim-treesitter", config = function(_, options)
+        require("nvim-treesitter").setup(options)
+      end },
+    })
+    return setup(settings)
+  end
   vim.go.loadplugins = true
   dofile(config .. "/init.lua")
   local phase = assert(vim.env.MAK_NVIM_PHASE)
@@ -181,7 +198,7 @@ local ok, err = xpcall(function()
     require("lazy").restore({ wait = true, show = false })
     for name, plugin in pairs(require("lazy.core.config").plugins) do
       for _, task in ipairs(plugin._.tasks or {}) do
-        assert(not task:has_errors(), "Plugin installation/build failed: " .. name)
+        assert(not task:has_errors(), "Plugin installation/build failed: " .. name .. "\n" .. task:output())
       end
       local commit = assert(locked[name], "Plugin absent from lockfile: " .. name).commit
       local head = vim.system({ "git", "-C", plugin.dir, "rev-parse", "HEAD" }, { text = true }):wait()
