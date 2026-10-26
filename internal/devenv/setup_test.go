@@ -609,3 +609,88 @@ func TestCancellationStillRestoresFilesAndPackages(t *testing.T) {
 		t.Fatalf("cancellation prevented package cleanup: %v", f.formulae)
 	}
 }
+
+func TestHomebrewInstallStopsAtFirstFailedPackage(t *testing.T) {
+	i, f := testInstaller(t)
+	f.fail = "install --formula neovim"
+	err := i.installMissing(context.Background(), "--formula", []string{"neovim", "node"}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "installing neovim") {
+		t.Fatalf("missing failed package: %v", err)
+	}
+	if f.formulae["node"] {
+		t.Fatal("continued installing node after neovim failed")
+	}
+	for _, call := range f.calls {
+		if strings.Contains(call, "node") {
+			t.Fatalf("attempted another package after failure: %s", call)
+		}
+	}
+}
+
+func TestHomebrewInstallHasNoInternalDeadline(t *testing.T) {
+	for _, action := range []string{"setup", "node"} {
+		for _, callerDeadline := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/callerDeadline=%v", action, callerDeadline), func(t *testing.T) {
+				i, f := testInstaller(t)
+				ctx := context.Background()
+				if callerDeadline {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(ctx, 2*time.Hour)
+					defer cancel()
+				}
+				parentDeadline, parentHasDeadline := ctx.Deadline()
+				installs := 0
+				i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+					if filepath.Base(program) == "brew" && args[0] == "install" {
+						installs++
+						if deadline, ok := ctx.Deadline(); ok != parentHasDeadline || !deadline.Equal(parentDeadline) {
+							t.Fatalf("Homebrew changed the caller's deadline: %s", deadline)
+						}
+					}
+					if filepath.Base(program) == "nvim" {
+						if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > time.Hour {
+							t.Fatal("configuration phase lost its separate time limit")
+						}
+					}
+					return f.run(ctx, env, program, args...)
+				}
+				var err error
+				if action == "setup" {
+					err = i.setup(ctx)
+				} else {
+					err = i.installPackage(ctx, packageForTest(t, action))
+				}
+				if err != nil || installs == 0 {
+					t.Fatalf("installs=%d, err=%v", installs, err)
+				}
+			})
+		}
+	}
+}
+
+func TestRunnerReportsContextTermination(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprint("deadline=", deadline), func(t *testing.T) {
+			var ctx context.Context
+			var cancel context.CancelFunc
+			want, message := context.Canceled, "command cancelled"
+			if deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
+				want, message = context.DeadlineExceeded, "command timed out"
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+				stop := time.AfterFunc(200*time.Millisecond, cancel)
+				defer stop.Stop()
+			}
+			defer cancel()
+			_, err := runner(nil, io.Discard, nil)(ctx, os.Environ(), "/bin/sh", "-c", "printf ready; sleep 30")
+			if !errors.Is(err, want) || !strings.Contains(err.Error(), message) {
+				t.Fatalf("missing termination reason: %v", err)
+			}
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				t.Fatalf("lost process error: %v", err)
+			}
+		})
+	}
+}

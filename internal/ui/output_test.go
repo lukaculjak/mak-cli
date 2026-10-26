@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHelpPreservesAlignmentAndText(t *testing.T) {
@@ -32,10 +33,24 @@ func TestNonTerminalOutputContainsNoFormatting(t *testing.T) {
 	Success(&output, "Ready")
 	Warning(&output, "Backup retained")
 	Error(&output, "Failed")
-	End(&output)
+	End(&output, 2*time.Minute)
 	want := "[step] Installing tools...\n[ok] Ready\n[warning] Backup retained\n[error] Failed\n"
 	if output.String() != want {
 		t.Fatalf("unexpected plain output: %q", output.String())
+	}
+}
+
+func TestCompletionDurationDoesNotWrapAtAnHour(t *testing.T) {
+	for elapsed, want := range map[time.Duration]string{
+		0:                                     "[ok] Completed in 00:00",
+		59*time.Second + 900*time.Millisecond: "[ok] Completed in 00:59",
+		time.Minute:                           "[ok] Completed in 01:00",
+		12*time.Minute + 34*time.Second:       "[ok] Completed in 12:34",
+		2*time.Hour + 5*time.Minute + 9*time.Second: "[ok] Completed in 125:09",
+	} {
+		if got := completionMessage(elapsed); got != want {
+			t.Fatalf("duration %s: got %q, want %q", elapsed, got, want)
+		}
 	}
 }
 

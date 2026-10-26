@@ -50,7 +50,7 @@ func doctorFixture(t *testing.T) (*installer, *bytes.Buffer, *bool) {
 					metadataArgs = append(metadataArgs, name)
 				}
 			}
-			if !reflect.DeepEqual(args, metadataArgs) && !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) && !reflect.DeepEqual(args, []string{"doctor", "check_access_directories", "check_exist_directories"}) {
+			if !reflect.DeepEqual(args, metadataArgs) && !reflect.DeepEqual(args, []string{"--prefix"}) && !reflect.DeepEqual(args, []string{"list", "--formula", "-1"}) && !reflect.DeepEqual(args, []string{"list", "--cask", "-1"}) && !reflect.DeepEqual(args, []string{"doctor", "check_access_directories", "check_exist_directories"}) {
 				t.Fatalf("mutating/unexpected Homebrew call: %v", args)
 			}
 			if envValue(env, "HOMEBREW_NO_AUTO_UPDATE") != "1" {

@@ -270,8 +270,6 @@ func (i *installer) installPackage(ctx context.Context, p packageSpec) (err erro
 			return nil
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
-	defer cancel()
 	defer func() {
 		if err != nil && i.journal != nil {
 			cleanupCtx, stop := context.WithTimeout(context.Background(), 10*time.Minute)

@@ -70,6 +70,10 @@ an error rather than an automatic yes. Homebrew/sudo may still request input.
 
 During installation, mak shows seven numbered stages and an orange spinner below
 the live installation logs. The spinner pauses for Homebrew's interactive installer.
+Successful commands using the normal terminal footer finish with
+`[ok] Completed in MM:SS`, measured from command startup and including time spent
+at prompts. Minutes can exceed 59 for long installations. Shell-code output,
+completion scripts, and commands with their own footer keep their existing output.
 Redirected output, `TERM=dumb`, and `NO_COLOR` use plain stage lines without animation.
 
 `mak setup codeenv` and `mak setup codingenv` are aliases. This installs Homebrew
@@ -79,13 +83,14 @@ Maple Mono NF, JetBrains Mono Nerd Font, Ghostty, and Meslo LG Nerd Font. Homebr
 install Apple's developer tools. If the C compiler is still missing, mak opens
 Apple's installation dialog and waits up to 20 minutes for you to finish it.
 Use a supported macOS/Homebrew combination and an internet connection.
-Setup checks Homebrew's managed-directory permissions before installing packages.
+Setup checks Homebrew's managed-directory permissions and existing Cellar package
+directories before installing packages. Doctor uses the same read-only checks.
 If an existing Homebrew installation belongs to another account or has lost write
 access, setup stops before changing Neovim or Ghostty files. Run
 `brew doctor check_access_directories check_exist_directories` as your normal user
 and follow the reported directory repairs if this account should manage Homebrew.
 Do not run mak or brew with sudo. Permission repair may need sudo for the specific
-directories Homebrew identifies; mak does not change shared-directory ownership.
+directories listed in the repair prompt; mak never takes ownership of `/usr/local` itself.
 Before installing a package, mak checks Homebrew and the commands on your `PATH`.
 Existing tools from nvm, rbenv, GHCup, or other installers are reused without
 claiming ownership. Packages with multiple required commands, such as Node.js
@@ -94,6 +99,11 @@ and npm, are skipped only when all are available. Ghostty is also detected in
 Homebrew because they have no executable. Homebrew may still install dependencies
 required by a missing package. Existing Homebrew packages are skipped, including
 versioned aliases such as Python.
+Missing packages are installed one at a time, stopping at the first failed package.
+Homebrew source builds can take hours, especially on Intel Macs without compatible
+prebuilt packages. Package installation has no fixed mak timeout; Ctrl+C cancels
+the installation and starts rollback. The subsequent Neovim configuration phase
+has a separate 60-minute limit. Cancellation and timeout errors name their cause.
 Versioned Homebrew Python installations are added as fallbacks when `python3`
 is not linked into Homebrew's main bin directory. Setup requires Python 3.10 or
 newer with `venv` and `ensurepip` for Mason's Python tools and checks this before

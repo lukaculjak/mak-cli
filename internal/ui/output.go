@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -45,11 +46,16 @@ func Begin(w io.Writer, command string) {
 	}
 }
 
-func End(w io.Writer) {
+func End(w io.Writer, elapsed time.Duration) {
 	p := colors(w)
 	if p.enabled {
-		fmt.Fprintf(w, "\n%s\n\n", p.paint("1;32", "[ok] Done"))
+		fmt.Fprintf(w, "\n%s\n\n", p.paint("1;32", completionMessage(elapsed)))
 	}
+}
+
+func completionMessage(elapsed time.Duration) string {
+	seconds := int64(elapsed / time.Second)
+	return fmt.Sprintf("[ok] Completed in %02d:%02d", seconds/60, seconds%60)
 }
 
 func Step(w io.Writer, format string, args ...any)    { message(w, "step", format, args...) }

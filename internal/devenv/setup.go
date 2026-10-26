@@ -108,6 +108,13 @@ func runner(in io.Reader, out io.Writer, lock func() *os.File) commandRunner {
 		}
 		err := cmd.Run()
 		if err != nil {
+			if cause := ctx.Err(); cause != nil {
+				reason := "command cancelled"
+				if errors.Is(cause, context.DeadlineExceeded) {
+					reason = "command timed out"
+				}
+				err = fmt.Errorf("%s: %w", reason, errors.Join(cause, err))
+			}
 			diagnostic := stdout.String() + stderr.String()
 			if len(diagnostic) > 8192 {
 				diagnostic = diagnostic[len(diagnostic)-8192:]
@@ -246,8 +253,6 @@ func (i *installer) setup(ctx context.Context) (err error) {
 			return err
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
-	defer cancel()
 	defer func() {
 		if err == nil {
 			return
@@ -325,6 +330,10 @@ func (i *installer) setup(ctx context.Context) (err error) {
 	if err = i.installMissing(ctx, "--cask", casks, names, i.beforeCasks); err != nil {
 		return fmt.Errorf("installing Ghostty and Nerd Fonts: %w", err)
 	}
+	// Source builds can take hours on Intel Macs. Limit configuration work only;
+	// Homebrew installation remains cancellable through the caller's context.
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
 	// Include any versioned runtime directories introduced by this installation.
 	i.env = setEnv(i.env, "PATH", brewFallbackPath(prefix, envValue(i.env, "PATH")))
 	i.stage(3, "Backing up Neovim and Ghostty and preparing configurations...")
@@ -545,13 +554,39 @@ func (i *installer) inventory(ctx context.Context, kind string) (map[string]bool
 	return result, nil
 }
 
-// Let Homebrew check its own managed directories, including Intel and Apple
-// Silicon layouts, without changing ownership or blocking on unrelated warnings.
+// Check managed directories and existing formula racks without changing
+// ownership or blocking on unrelated Homebrew warnings.
 func (i *installer) checkBrewPermissions(ctx context.Context) error {
 	env := setEnv(i.env, "HOMEBREW_NO_AUTO_UPDATE", "1")
 	env = setEnv(env, "HOMEBREW_NO_ANALYTICS", "1")
-	if _, err := i.run(ctx, env, i.brew, "doctor", "check_access_directories", "check_exist_directories"); err != nil {
-		return fmt.Errorf("Homebrew permissions: %w\nRun brew doctor check_access_directories check_exist_directories as your normal user. If this account should manage Homebrew, apply its suggested directory repairs and retry. Do not run mak or brew with sudo", err)
+	_, doctorErr := i.run(ctx, env, i.brew, "doctor", "check_access_directories", "check_exist_directories")
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	prefix, err := i.run(ctx, env, i.brew, "--prefix")
+	if err != nil {
+		return fmt.Errorf("Homebrew permissions: %w", errors.Join(doctorErr, err))
+	}
+	prefix = strings.TrimSpace(prefix)
+	if !filepath.IsAbs(prefix) || filepath.Clean(prefix) != prefix || prefix == "/" || strings.ContainsAny(prefix, "\r\n") {
+		return fmt.Errorf("invalid Homebrew prefix %q", prefix)
+	}
+	dirs, err := unwritableCellarDirectories(ctx, filepath.Join(prefix, "Cellar"))
+	if err != nil {
+		return fmt.Errorf("Homebrew permissions: %w", errors.Join(doctorErr, err))
+	}
+	if len(dirs) != 0 {
+		if doctorErr != nil {
+			known := brewPermissionDirectories(doctorErr.Error(), prefix)
+			if len(known) == 0 {
+				return fmt.Errorf("Homebrew permissions: %w\nAlso check write access to:\n%s", doctorErr, strings.Join(dirs, "\n"))
+			}
+			dirs = append(known, dirs...)
+		}
+		doctorErr = fmt.Errorf("The following directories are not writable by your user:\n%s\n\n", strings.Join(dirs, "\n"))
+	}
+	if doctorErr != nil {
+		return fmt.Errorf("Homebrew permissions: %w\nRun brew doctor check_access_directories check_exist_directories as your normal user. If this account should manage Homebrew, repair the listed directories and retry. Do not run mak or brew with sudo", doctorErr)
 	}
 	return nil
 }
@@ -581,8 +616,14 @@ func (i *installer) installMissing(ctx context.Context, kind string, requested [
 	if len(missing) == 0 {
 		return nil
 	}
-	_, err := i.run(ctx, i.env, i.brew, append([]string{"install", kind}, missing...)...)
-	return err
+	fmt.Fprintln(i.out, "Homebrew source builds can take hours. Installation has no fixed time limit; press Ctrl+C to cancel and roll back.")
+	for _, name := range missing {
+		ui.Step(i.out, "Installing %s and its dependencies...", name)
+		if _, err := i.run(ctx, i.env, i.brew, "install", kind, name); err != nil {
+			return fmt.Errorf("installing %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (i *installer) replace(p *replacement) error {

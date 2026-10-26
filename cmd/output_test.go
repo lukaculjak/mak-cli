@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"testing"
+	"time"
 
 	"github.com/lukaculjak/mak-cli/cmd/setup"
 	"github.com/spf13/cobra"
@@ -20,6 +22,24 @@ func TestHelpRetainsDefaultCobraOutputWhenRedirected(t *testing.T) {
 	child.Help()
 	if after.String() != before.String() {
 		t.Fatalf("plain help changed:\n%s", after.String())
+	}
+}
+
+func TestHumanCommandStartsANewElapsedTimer(t *testing.T) {
+	cmd := &cobra.Command{Use: "setup"}
+	cmd.SetOut(&bytes.Buffer{})
+	previous := time.Now().Add(-2 * time.Hour)
+	cmd.SetContext(context.WithValue(context.Background(), commandStartedKey{}, previous))
+	rootCmd.PersistentPreRun(cmd, nil)
+	started, ok := cmd.Context().Value(commandStartedKey{}).(time.Time)
+	if !ok || !started.After(previous) {
+		t.Fatal("command reused an old timer")
+	}
+	shell := newShellenvCmd()
+	shell.SetContext(context.Background())
+	rootCmd.PersistentPreRun(shell, nil)
+	if shell.Context().Value(commandStartedKey{}) != nil {
+		t.Fatal("machine-readable command started a footer timer")
 	}
 }
 

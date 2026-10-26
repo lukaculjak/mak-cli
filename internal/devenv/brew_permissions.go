@@ -2,6 +2,7 @@ package devenv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,48 @@ import (
 	"unicode"
 
 	"github.com/lukaculjak/mak-cli/internal/ui"
+	"golang.org/x/sys/unix"
 )
+
+// Homebrew's access checks cover shared directories but can miss existing
+// formula racks. Upgrades must be able to create a new version inside each rack.
+func unwritableCellarDirectories(ctx context.Context, cellar string) ([]string, error) {
+	if _, err := os.Stat(cellar); os.IsNotExist(err) {
+		return nil, nil // Missing managed directories are reported by brew doctor.
+	} else if err != nil {
+		return nil, err
+	}
+	var dirs []string
+	check := func(dir string) error {
+		if err := unix.Access(dir, unix.W_OK|unix.X_OK); err != nil {
+			if !errors.Is(err, unix.EACCES) {
+				return fmt.Errorf("checking %s: %w", dir, err)
+			}
+			dirs = append(dirs, dir)
+		}
+		return nil
+	}
+	if err := check(cellar); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(cellar)
+	if errors.Is(err, os.ErrPermission) {
+		return []string{cellar}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			if err := check(filepath.Join(cellar, entry.Name())); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return dirs, nil
+}
 
 func (i *installer) ensureBrewPermissions(ctx context.Context) error {
 	permissionErr := i.checkBrewPermissions(ctx)

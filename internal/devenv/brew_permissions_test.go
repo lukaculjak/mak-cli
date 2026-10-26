@@ -39,6 +39,125 @@ func TestBrewPermissionDirectories(t *testing.T) {
 	}
 }
 
+func TestCellarPermissionsCheckedBeforeInstall(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	for _, tc := range []struct {
+		name, input                string
+		combined, escape, repaired bool
+	}{
+		{name: "declined", input: "no\n"},
+		{name: "approved", input: "yes\n", repaired: true},
+		{name: "combined with brew doctor", input: "yes\n", combined: true, repaired: true},
+		{name: "symlink outside prefix", input: "yes\n", escape: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			i, f := testInstaller(t)
+			originals := seedEnvironment(t, i)
+			prefix := filepath.Join(i.home, "brew")
+			rack := filepath.Join(prefix, "Cellar", "libunistring")
+			if err := os.MkdirAll(rack, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target := rack
+			if tc.escape {
+				target = t.TempDir()
+				if err := os.Remove(rack); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, rack); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Chmod(target, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(target, 0o755) })
+			fish := filepath.Join(prefix, "share", "fish")
+			if err := os.MkdirAll(fish, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			i.out, i.in = &out, strings.NewReader(tc.input)
+			repaired := false
+			i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+				switch filepath.Base(program) {
+				case "brew":
+					if args[0] == "--prefix" {
+						return prefix, nil
+					}
+					if args[0] == "doctor" && tc.combined && !repaired {
+						return "", fmt.Errorf("The following directories are not writable by your user:\n%s\n\n", fish)
+					}
+					if args[0] == "install" && !repaired {
+						t.Fatal("installation started before Cellar repair")
+					}
+				case "sudo":
+					want := []string{rack}
+					if tc.combined {
+						want = append([]string{fish}, want...)
+					}
+					if !reflect.DeepEqual(args, append([]string{"/usr/sbin/chown", "-R", "-P", strconv.Itoa(os.Getuid())}, want...)) {
+						t.Fatalf("unexpected ownership repair: %v", args)
+					}
+					return "", nil
+				case "chmod":
+					repaired = true
+					return "", os.Chmod(rack, 0o755)
+				}
+				return f.run(ctx, env, program, args...)
+			}
+			err := i.setup(context.Background())
+			if repaired != tc.repaired || (err == nil) != tc.repaired {
+				t.Fatalf("repaired=%v, err=%v\n%s", repaired, err, &out)
+			}
+			if !tc.repaired {
+				assertOriginals(t, originals)
+				if i.journal != nil {
+					t.Fatal("Cellar permission failure reached installation journal")
+				}
+			}
+			if tc.repaired && !strings.Contains(out.String(), rack) {
+				t.Fatalf("repair prompt did not identify the affected rack: %s", &out)
+			}
+		})
+	}
+}
+
+func TestCellarPermissionCheckIsReadOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	i, _ := testInstaller(t)
+	prefix := filepath.Join(i.home, "brew")
+	rack := filepath.Join(prefix, "Cellar", "libunistring")
+	if err := os.MkdirAll(rack, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(rack, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(rack, 0o755) })
+	i.run = func(ctx context.Context, env []string, program string, args ...string) (string, error) {
+		if args[0] == "--prefix" {
+			return prefix, nil
+		}
+		if args[0] != "doctor" {
+			t.Fatalf("permission check mutated the system: %s %v", program, args)
+		}
+		return "", nil
+	}
+	err := i.checkBrewPermissions(context.Background())
+	if err == nil || !strings.Contains(err.Error(), rack) {
+		t.Fatalf("missed unwritable existing formula rack: %v", err)
+	}
+	st, err := os.Stat(rack)
+	if err != nil || st.Mode().Perm() != 0o500 {
+		t.Fatalf("permission check changed the rack: %v %v", st, err)
+	}
+}
+
 func TestInstallHomebrewPermissionRepair(t *testing.T) {
 	for _, action := range []string{"setup", "node", "ghostty"} {
 		t.Run(action, func(t *testing.T) {

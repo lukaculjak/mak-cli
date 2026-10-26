@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lukaculjak/mak-cli/cmd/meet"
 	"github.com/lukaculjak/mak-cli/cmd/prefill"
@@ -16,6 +18,8 @@ import (
 )
 
 var Version = "dev"
+
+type commandStartedKey struct{}
 
 const banner = `▄▄ ▄  ▄▄  ▄ ▄     ▄▄▄ ▄   ▄▄▄
 █ █ █ █▄█ █▄▀ ▄▄▄ █   █    █
@@ -31,6 +35,7 @@ var rootCmd = &cobra.Command{
 mak is a personal CLI tool designed for scaffolding projects, blocks of code and automating various tasks in the development workflow.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if humanOutput(cmd) {
+			cmd.SetContext(context.WithValue(cmd.Context(), commandStartedKey{}, time.Now()))
 			ui.Begin(cmd.OutOrStdout(), cmd.CommandPath())
 		}
 	},
@@ -41,7 +46,9 @@ mak is a personal CLI tool designed for scaffolding projects, blocks of code and
 		if !strings.Contains(cmd.CommandPath(), "update") && !strings.Contains(cmd.CommandPath(), "upgrade") {
 			updater.CheckAndNotify(Version)
 		}
-		ui.End(cmd.OutOrStdout())
+		if started, ok := cmd.Context().Value(commandStartedKey{}).(time.Time); ok {
+			ui.End(cmd.OutOrStdout(), time.Since(started))
+		}
 		return nil
 	},
 }

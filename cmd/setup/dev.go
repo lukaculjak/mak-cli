@@ -24,6 +24,7 @@ Use --neorg or --pomodoro to install only that feature.
 Full setup schedules a weekday Neorg journal reminder at 09:17 local time.
 The installation confirmation defaults to yes when you press Enter; --yes skips it.
 Homebrew permission repair requires a separate explicit yes, even with --yes.
+Homebrew source builds have no fixed time limit. Ctrl+C cancels setup and starts rollback.
 Existing executables are reused, including tools installed outside Homebrew.
 Use --list (-l) to preview software availability and mak ownership.
 Use --install (-i) PACKAGE or --remove (-r) PACKAGE to manage one tracked package.
